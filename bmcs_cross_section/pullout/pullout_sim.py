@@ -13,24 +13,19 @@ from ibvpy.api import \
     TStepBC, Hist, XDomainFEInterface1D
 from ibvpy.bcond import BCDof
 from ibvpy.fets.fets1D5 import FETS1D52ULRH
-from ibvpy.tfunction import MonotonicLoadingScenario, CyclicLoadingScenario
-from ibvpy.tmodel.mats1D5.vmats1D5_bondslip1D import \
-    MATSBondSlipMultiLinear, MATSBondSlipDP, \
-    MATSBondSlipD, MATSBondSlipEP, MATSBondSlipFatigue
+from ibvpy.tfunction import TFSelector
+from ibvpy.api import \
+    MATS1D5BondSlipMultiLinear, \
+    MATS1D5BondSlipD, MATS1D5BondSlipEP, MATS1D5BondSlipTriLinear
 from ibvpy.view.plot2d import Vis2D
 from ibvpy.view.reporter import RInputRecord
-from ibvpy.view.ui import BMCSLeafNode, itags_str, BMCSRootNode
-from ibvpy.view.window import BMCSWindow, PlotPerspective
+from ibvpy.view.ui import BMCSLeafNode, BMCSRootNode
 from scipy import interpolate as ip
 from scipy.integrate import cumtrapz
 from traits.api import \
     Property, cached_property, \
     HasStrictTraits, Bool, List, Float, Int, Enum, \
     Array, Tuple
-from traitsui.api import \
-    View, Item, Group
-from traitsui.ui_editors.array_view_editor import ArrayViewEditor
-
 
 class PulloutHist(Hist, bu.Model, Vis2D):
     name = 'History'
@@ -146,6 +141,18 @@ class PulloutHist(Hist, bu.Model, Vis2D):
         #     sig_tEms = sig_tEms[0,...]
         return sig_tEms
 
+    U_bar_t = tr.Property
+    def _get_U_bar_t(self):
+        return self.get_U_bar_t()
+
+    W_t = tr.Property
+    def _get_W_t(self):
+        return self.get_W_t()
+
+    G_t = tr.Property
+    def _get_G_t(self):
+        return self.W_t - self.U_bar_t
+
     def get_U_bar_t(self):
         xmodel = self.tstep_source.fe_domain[0].xmodel
         fets = xmodel.fets
@@ -158,6 +165,33 @@ class PulloutHist(Hist, bu.Model, Vis2D):
         U_bar_t = 0.5 * np.einsum('m,Em,s,tEms,tEms->t',
                                   w_ip, J_det, A, sig_tEms, eps_tEms)
         return U_bar_t
+
+    G_omega_t = tr.Property
+    def _get_G_omega_t(self):
+        xmodel = self.tstep_source.fe_domain[0].xmodel
+        mats = self.tstep_source.material_model_
+        fets = xmodel.fets
+        A = xmodel.A
+        eps_tEms = self.get_eps_tEms(slice(0, None))
+        _, D0_rs = mats.get_corr_pred(np.array([[0,0,0]]), 0,
+                           kappa_n=np.array([0]), omega_n=np.array([0]))
+        w_ip = fets.ip_weights
+        J_det = xmodel.det_J_Em
+        Y_Em_t = 0.5 * np.einsum('m,Em,s,tEmr,rs,tEms->tEm',
+                                  w_ip, J_det, A, eps_tEms, D0_rs[0], eps_tEms)
+        omega_Em_t = np.array([state[0]['omega_n'] for state in self.state_vars])
+        #G_omega_Em_t = cumtrapz(Y_Em_t, omega_Em_t, axis=0, initial = 0)
+        #return np.sum(G_omega_Em_t, axis=(1,2))
+
+        t = self.t
+        d_omega_Em_t = (
+                (omega_Em_t[1:] - omega_Em_t[:-1]) / (t[1:] - t[:-1])[:, None, None]
+        )
+        #print(Y_Em_t.shape, d_omega_Em_t.shape)
+        dG_omega_t = np.hstack([
+            np.einsum('tEm,tEm->t', Y_Em_t[:-1], d_omega_Em_t), [0]])
+        return cumtrapz(dG_omega_t, t, initial=0)
+
 
     def get_W_t(self):
         P_t, _, w_L = self.get_Pw_t()
@@ -210,8 +244,9 @@ class PulloutHist(Hist, bu.Model, Vis2D):
 
     def plot_G_t(self, ax,
                  label_U='U(t)', label_W='W(t)',
-                 color_U='blue', color_W='red'):
+                 color_U='green', color_W='black'):
 
+        #_, _, w_t = self.get_Pw_t()
         t = self.t
         U_bar_t = self.get_U_bar_t()
         W_t = self.get_W_t()
@@ -219,17 +254,20 @@ class PulloutHist(Hist, bu.Model, Vis2D):
             return
         ax.plot(t, W_t, color=color_W, label=label_W)
         ax.plot(t, U_bar_t, color=color_U, label=label_U)
-        ax.fill_between(t, W_t, U_bar_t, facecolor='gray', alpha=0.5,
+        ax.plot(t, U_bar_t+self.G_omega_t, color='black', linestyle='dashed', label='G_t')
+        ax.fill_between(t, W_t, U_bar_t, facecolor='gray', alpha=0.3,
                         label='G(t)')
+        ax.fill_between(t, U_bar_t, 0, facecolor='green', alpha=0.3)
         ax.set_ylabel('energy [Nmm]')
-        ax.set_xlabel('time [-]')
+        ax.set_xlabel(r'$t$ [-]')
         ax.legend()
 
     def plot_dG_t(self, ax, *args, **kw):
+        #_, _, w_t = self.get_Pw_t()
         t = self.t
         dG = self.get_dG_t()
         ax.plot(t, dG, color='black', label='dG/dt')
-        ax.fill_between(t, 0, dG, facecolor='blue', alpha=0.05)
+        ax.fill_between(t, 0, dG, facecolor='gray', alpha=0.3)
         ax.legend()
 
     # =========================================================================
@@ -347,41 +385,156 @@ class PulloutHist(Hist, bu.Model, Vis2D):
         )
     )
 
-    def subplots(self, fig):
-        (ax_geo, ax_Pw), (ax_sf, ax_G_t) = fig.subplots(2, 2)
-        ax_sig = ax_sf.twinx()
-        ax_dG_t = ax_G_t.twinx()
-        return ax_geo, ax_Pw, ax_sig, ax_sf, ax_G_t, ax_dG_t
+class PulloutHist2(PulloutHist):
 
-    def update_plot2(self, axes):
-        if len(self.U_t) == 0:
-            return
-        ax_geo, ax_Pw, ax_sig, ax_sf, ax_G_t, ax_dG_t = axes
-        self.plot_geo(ax_geo)
-        self.plot_Pw(ax_Pw)
-        self.plot_sig_p(ax_sig)
-        self.plot_sf(ax_sf)
-        self.plot_G_t(ax_G_t)
-        self.plot_dG_t(ax_dG_t)
+    def plot_Pw(self, ax, color='blue'):
+        P_range, w_unloaded, w_loaded = self.get_Pw_t()
+        idx = self.get_time_idx(self.t_slider)
+        P = P_range[idx]
+        w = w_loaded[idx]
+        w_L_b = w_unloaded[idx]
+        ax.plot(w,P  * 0.001,marker='o', color='magenta')
+        ax.plot(w_L_b, P * 0.001,marker='o', color='magenta')
+        ax.plot(w_loaded, P_range * 0.001, color=color, label=r'$w_\mathrm{loaded}$')
+        ax.plot(w_unloaded, P_range * 0.001, color=color, linestyle='dashed',
+                label=r'$w_\mathrm{unloaded}$')
+        ax.set_ylabel(r'$P$ [kN]')
+        ax.set_xlabel(r'$w$ [mm]')
+        ax.legend()
+
+    def plot_fields(self, ax_u, ax_eps, ax_sig, ax_tau):
+
+        L_b = self.tstep_source.geometry.L_x
+        p = self.tstep_source.cross_section.P_b
+        A_m = self.tstep_source.cross_section.A_m
+        A_f = self.tstep_source.cross_section.A_f
+        w_max = self.tstep_source.w_max
+        x_range = self.tstep_source.X_M
+#        P_range = self.symb.get_P_w_pull(self.w_range)
+        P_range, w_0_range, w_L_range = self.get_Pw_t()
+        idx = self.get_time_idx(self.t_slider)
+
+        u_m_range, u_f_range = self.get_u_p().T
+
+        # u_f_range = self.symb.get_u_w_f_x(x_range, w)
+        # u_m_range = self.symb.get_u_w_m_x(x_range, w)
+
+        eps_m_range, eps_f_range = self.get_eps_p().T
+
+        # eps_f_range = self.symb.get_eps_w_f_x(x_range, w)
+        # eps_m_range = self.symb.get_eps_w_m_x(x_range, w)
+
+        sig_m_range, sig_f_range = self.get_sig_p().T
+
+        # sig_f_range = self.symb.get_sig_w_f_x(x_range, w)
+        # sig_m_range = self.symb.get_sig_w_m_x(x_range, w)
+
+        tau_range = self.get_sf() / p
+
+        #tau_range = self.symb.get_tau_w_x(x_range, w) * np.ones_like(x_range)
+
+        #w_range = w_0_range
+        eps_max = np.max(np.hstack([eps_f_range, eps_m_range])) # self.symb.get_eps_w_f_x(x_range, w_argmax))
+        eps_min = np.min(np.hstack([eps_m_range, eps_f_range])) # self.symb.get_eps_w_m_x(x_range, w_argmax))
+        sig_max = np.max(np.hstack([sig_f_range, sig_m_range])) # self.symb.get_sig_w_f_x(x_range, w_argmax))
+        sig_min = np.min(np.hstack([sig_m_range, sig_f_range])) # self.symb.get_sig_w_m_x(x_range, w_argmax))
+        u_max = np.max(np.hstack([u_m_range,u_f_range])) # self.symb.get_u_w_m_x(x_range, w_argmax))
+        u_min = np.min(np.hstack([u_m_range,u_f_range])) # self.symb.get_u_w_m_x(x_range, w_argmax))
+
+        N_f_range = A_f * sig_f_range
+        N_m_range = A_m * sig_m_range
+        T_range = p * tau_range
+
+        N_max = np.max(np.hstack([N_f_range, N_m_range]))
+        u_max = w_max
+        N_min = np.min(np.hstack([N_m_range, N_f_range]))
+        T_max = np.max(T_range)
+        T_min = np.min(T_range)
+        x_min = x_range[0]
+        x_max = x_range[-1]
+
+        self.plot_filled_var(
+            ax_u, x_range, u_f_range,
+            color='brown', alpha=0.2,
+            ylim=(u_min, u_max), xlim=(x_min,x_max)
+            )
+
+        self.plot_filled_var(
+            ax_u, x_range, u_m_range,
+            xlabel='$x$ [mm]', ylabel='$u$ [mm]',
+            color='brown', alpha=0.3, linestyle='dashed',
+            ylim=(u_min, u_max), xlim=(x_min,x_max)
+            )
+
+        self.plot_filled_var(
+            ax_eps, x_range, eps_f_range,
+            xlabel='$x$ [mm]', ylabel=r'$\varepsilon$ [mm]',
+            color='green', alpha=0.2,
+            ylim=(eps_min, eps_max), xlim=(x_min,x_max)
+            )
+
+        self.plot_filled_var(
+            ax_eps, x_range, eps_m_range,
+            xlabel='$x$ [mm]', ylabel=r'$\varepsilon$ [mm]',
+            color='green', alpha=0.3, linestyle='dashed',
+            ylim=(eps_min, eps_max), xlim=(x_min,x_max)
+            )
+
+        self.plot_filled_var(
+            ax_sig, x_range, N_f_range,
+            xlabel='$x$ [mm]', ylabel=r'$N$ [N]',
+            color='blue', alpha=0.2,
+            ylim=(sig_min, sig_max), xlim=(x_min,x_max)
+            )
+
+        self.plot_filled_var(
+            ax_sig, x_range, N_m_range,
+            xlabel='$x$ [mm]', ylabel=r'$N$ [N]',
+            color='blue', alpha=0.3, linestyle='dashed',
+            ylim=(N_min, N_max), xlim=(x_min,x_max)
+            )
+
+        self.plot_filled_var(
+            ax_tau, x_range, T_range,
+            xlabel='$x$ [mm]', ylabel=r'$T$ [N/mm]',
+            color='red', alpha=0.2,
+            ylim=(np.min([0,T_min]), T_max), xlim=(x_min,x_max)
+            )
+
+    def subplots(self, fig):
+        gs = fig.add_gridspec(2,2, width_ratios=[1., 1.])
+        ax1 = fig.add_subplot(gs[0,0])
+        ax2 = fig.add_subplot(gs[0,1])
+        ax3 = fig.add_subplot(gs[1,0])
+        ax4 = fig.add_subplot(gs[1,1])
+        ax44 = ax4.twinx()
+        return ax1, ax2, ax3, ax4, ax44
 
     def update_plot(self, axes):
-        if len(self.U_t) == 0:
-            return
-        ax_geo, ax_Pw, ax_sig, ax_sf, ax_G_t, ax_dG_t = axes
-        self.plot_geo(ax_geo)
+        ax_Pw, ax_u, ax_eps, ax_sig, ax_tau = axes
         self.plot_Pw(ax_Pw)
-        #        self.plot_sig_p(ax_sig)
-        self.plot_s(ax_sig)
-        self.plot_sf(ax_sf)
-        # self.plot_G_t(ax_G_t)
-        # self.plot_dG_t(ax_dG_t)
-        self.tstep_source.mat_mod_.bs_law.replot()
-        self.tstep_source.mat_mod_.bs_law.mpl_plot(ax_G_t)
-        ax_G_t.set_xlabel(r'$s$ [mm]')
-        ax_G_t.set_ylabel(r'$\tau$ [MPa]')
+        self.plot_fields(ax_u, ax_eps, ax_sig, ax_tau)
 
+    def plot_filled_var(self, ax, xdata, ydata, xlabel='', ylabel='',
+                        color='black', alpha=0.1, ylim=None, xlim=None, linestyle='solid'):
+        line, = ax.plot(xdata, ydata, color=color, linestyle=linestyle);
+        if xlabel:
+            ax.set_xlabel(xlabel);
+        if ylabel:
+            ax.set_ylabel(ylabel)
+        if ylim:
+            y_min, y_max = ylim
+            dy = y_max - y_min
+            if dy == 0:
+                dy = 0.05
+            ax.set_ylim(y_min-0.05*dy, y_max+0.05*dy)
+        if xlim:
+            x_min, x_max = xlim
+            dx = x_max - x_min
+            ax.set_xlim(x_min-0.05*dx, x_max+0.05*dx)
+        ax.fill_between(xdata, ydata, 0, color=color, alpha=alpha);
+        return line
 
-#        self.tstep_source.mats_eval.plot(ax_G_t)
 
 class CrossSection(BMCSLeafNode, RInputRecord):
     '''Parameters of the pull-out cross section
@@ -410,14 +563,6 @@ class CrossSection(BMCSLeafNode, RInputRecord):
                    auto_set=False, enter_set=True,
                    desc='perimeter of the bond interface')
 
-    view = View(
-        Item('A_m'),
-        Item('A_f'),
-        Item('P_b')
-    )
-
-    tree_view = view
-
     ipw_view = bu.View(
         bu.Item('A_m'),
         bu.Item('A_f'),
@@ -435,41 +580,38 @@ class Geometry(BMCSLeafNode, RInputRecord):
                    auto_set=False, enter_set=True,
                    desc='embedded length')
 
-    view = View(
-        Item('L_x'),
-    )
-
-    tree_view = view
-
     ipw_view = bu.View(
         bu.Item('L_x'),
     )
 
 
-class DataSheet(HasStrictTraits):
-    data = Array(np.float_)
-
-    view = View(
-        Item('data',
-             show_label=False,
-             resizable=True,
-             editor=ArrayViewEditor(titles=['x', 'y', 'z'],
-                                    format='%.4f',
-                                    )
-             ),
-        width=0.5,
-        height=0.6
-    )
-
-
 class PullOutModel(TStepBC, BMCSRootNode, Vis2D):
     name = 'Pullout'
-
-    hist_type = PulloutHist
-
     node_name = 'Pull out simulation'
 
-    tree = ['cross_section', 'geometry', 'mat_mod', 'loading_scenario', 'hist']
+    hist_type = PulloutHist2
+
+    history = tr.Property(bu.Instance(PulloutHist2))
+    @tr.cached_property
+    def _get_history(self):
+        return self.hist
+
+    time_line = tr.Property()
+    @tr.cached_property
+    def _get_time_line(self):
+        return self.sim.tline
+
+    depends_on = ['cross_section', 'geometry',
+                  'material_model',
+                  'loading_scenario',
+                  'history'
+                  ]
+    tree = [
+        # 'time_line', 'cross_section',
+        # 'geometry', 'material_model',
+        # 'loading_scenario',
+        'history'
+    ]
 
     def run(self):
         self.sim.run()
@@ -504,8 +646,9 @@ class PullOutModel(TStepBC, BMCSRootNode, Vis2D):
     ipw_view = bu.View(
         bu.Item('w_max'),
         bu.Item('n_e_x'),
-        bu.Item('mat_mod'),
-        bu.Item('loading_scenario'),
+        bu.Item('fixed_boundary'),
+        bu.Item('material_model'),
+#        bu.Item('loading_scenario'),
         time_editor=bu.ProgressEditor(run_method='run',
                                       reset_method='reset',
                                       interrupt_var='interrupt',
@@ -514,30 +657,21 @@ class PullOutModel(TStepBC, BMCSRootNode, Vis2D):
                                       )
     )
 
-    tree_view = View(
-        Group(
-            Item('mats_eval_type', resizable=True, full_size=True),
-            Item('control_variable', resizable=True, full_size=True),
-            Item('w_max', resizable=True, full_size=True),
-            Item('n_e_x', resizable=True, full_size=True),
-            Item('fixed_boundary'),
-            Group(
-                Item('loading_scenario@', show_label=False),
-            )
-        )
-    )
-
-    @tr.on_trait_change(itags_str)
+    @tr.on_trait_change("state_changed")
     def report_change(self):
         self.model_structure_changed = True
 
     # =========================================================================
     # Test setup parameters
     # =========================================================================
-    loading_scenario = bu.EitherType(
-        options=[('monotonic', MonotonicLoadingScenario),
-                 ('cyclic', CyclicLoadingScenario)],
-        report=True,
+    # loading_scenario = bu.EitherType(
+    #     options=[('monotonic', MonotonicLoadingScenario),
+    #              ('cyclic', CyclicLoadingScenario)],
+    #     report=True, TIME=True,
+    #     desc='object defining the loading scenario'
+    # )
+
+    loading_scenario = bu.Instance(TFSelector, (), TIME=True,
         desc='object defining the loading scenario'
     )
 
@@ -559,7 +693,7 @@ class PullOutModel(TStepBC, BMCSRootNode, Vis2D):
     def _geometry_default(self):
         return Geometry()
 
-    control_variable = Enum('u', 'f',
+    control_variable = bu.Enum(options=['u', 'f'],
                             auto_set=False, enter_set=True,
                             desc=r'displacement or force control: [u|f]',
                             BC=True)
@@ -591,12 +725,13 @@ class PullOutModel(TStepBC, BMCSRootNode, Vis2D):
                       desc='required accuracy',
                       ALG=True)
 
-    mat_mod = bu.EitherType(
-        options=[('multilinear', MATSBondSlipMultiLinear),
-                 ('damage', MATSBondSlipD),
-                 ('elasto-plasticity', MATSBondSlipEP),
-                 ('damage-plasticity', MATSBondSlipDP),
-                 ('cumulative fatigue', MATSBondSlipFatigue)],
+    material_model = bu.EitherType(
+        options=[('multilinear', MATS1D5BondSlipMultiLinear),
+                 ('trilinear', MATS1D5BondSlipTriLinear),
+                 ('damage', MATS1D5BondSlipD),
+                 ('elasto-plasticity', MATS1D5BondSlipEP),
+                 # ('cumulative fatigue', MATSBondSlipFatigue)
+                 ],
         MAT=True
     )
     '''Material model'''
@@ -604,17 +739,17 @@ class PullOutModel(TStepBC, BMCSRootNode, Vis2D):
     mm = Property
 
     def _get_mm(self):
-        return self.mat_mod_
+        return self.material_model_
 
     material = Property
 
     def _get_material(self):
-        return self.mat_mod_
+        return self.material_model_
 
     # =========================================================================
     # Finite element type
     # =========================================================================
-    fets_eval = Property(bu.Instance(FETS1D52ULRH), depends_on='CS,MAT')
+    fets_eval = Property(bu.Instance(FETS1D52ULRH), depends_on="state_changed")
     '''Finite element time stepper implementing the corrector
     predictor operators at the element level'''
 
@@ -625,7 +760,7 @@ class PullOutModel(TStepBC, BMCSRootNode, Vis2D):
                             A_f=self.cross_section.A_f)
 
     dots_grid = Property(bu.Instance(XDomainFEInterface1D),
-                         depends_on=itags_str)
+                         depends_on="state_changed")
     '''Discretization object.
     '''
 
@@ -648,7 +783,7 @@ class PullOutModel(TStepBC, BMCSRootNode, Vis2D):
 
     @cached_property
     def _get_domains(self):
-        return [(self.dots_grid, self.mat_mod_)]
+        return [(self.dots_grid, self.material_model_)]
 
     # =========================================================================
     # Boundary conditions
@@ -668,14 +803,16 @@ class PullOutModel(TStepBC, BMCSRootNode, Vis2D):
     def _set_u_f0_max(self, value):
         self.w_max = value
 
-    fixed_boundary = Enum('non-loaded end (matrix)',
-                          'loaded end (matrix)',
-                          'non-loaded end (reinf)',
-                          'clamped left',
-                          BC=True,
-                          desc='which side of the specimen is fixed [non-loaded end [matrix], loaded end [matrix], non-loaded end [reinf]]')
+    fixed_boundary = bu.Enum(
+        options=['non-loaded end (matrix)',
+                 'loaded end (matrix)',
+                 'non-loaded end (reinf)',
+                 'clamped left'],
+        BC=True,
+        desc='which side of the specimen is fixed [non-loaded end [matrix], loaded end [matrix], non-loaded end [reinf]]'
+    )
 
-    fixed_dofs = Property(depends_on=itags_str)
+    fixed_dofs = Property(depends_on="state_changed")
 
     @cached_property
     def _get_fixed_dofs(self):
@@ -688,19 +825,19 @@ class PullOutModel(TStepBC, BMCSRootNode, Vis2D):
         elif self.fixed_boundary == 'clamped left':
             return [0, 1]
 
-    controlled_dof = Property(depends_on=itags_str)
+    controlled_dof = Property(depends_on="state_changed")
 
     @cached_property
     def _get_controlled_dof(self):
         return 2 + 2 * self.n_e_x - 1
 
-    free_end_dof = Property(depends_on=itags_str)
+    free_end_dof = Property(depends_on="state_changed")
 
     @cached_property
     def _get_free_end_dof(self):
         return 1
 
-    fixed_bc_list = Property(depends_on=itags_str)
+    fixed_bc_list = Property(depends_on="state_changed")
     '''Foxed boundary condition'''
 
     @cached_property
@@ -710,7 +847,7 @@ class PullOutModel(TStepBC, BMCSRootNode, Vis2D):
                   dof=dof, value=0.0) for dof in self.fixed_dofs
         ]
 
-    control_bc = Property(depends_on=itags_str)
+    control_bc = Property(depends_on="state_changed")
     '''Control boundary condition - make it accessible directly
     for the visualization adapter as property
     '''
@@ -720,9 +857,9 @@ class PullOutModel(TStepBC, BMCSRootNode, Vis2D):
         return BCDof(node_name='pull-out displacement',
                      var=self.control_variable,
                      dof=self.controlled_dof, value=self.w_max,
-                     time_function=self.loading_scenario_)
+                     time_function=self.loading_scenario.profile_)
 
-    bc = Property(depends_on=itags_str)
+    bc = Property(depends_on="state_changed")
 
     @cached_property
     def _get_bc(self):
@@ -783,43 +920,17 @@ class PullOutModel(TStepBC, BMCSRootNode, Vis2D):
 
     def subplots(self, fig):
         ax_geo, ax_Pw = fig.subplots(1, 2)
-        return ax_geo, ax_Pw
+#        (ax_geo, ax_Pw), (ax_energy, ax_dG_t) = fig.subplots(2, 2)
+        return ax_geo, ax_Pw#, ax_energy, ax_dG_t
 
     def update_plot(self, axes):
-        if len(self.hist.U_t) == 0:
+        if len(self.history.U_t) == 0:
             return
         ax_geo, ax_Pw = axes
-        self.hist.plot_geo(ax_geo)
-        self.hist.plot_Pw(ax_Pw)
-
-    def get_window(self):
-        Pw = self.hist.plt('plot_Pw', label='pullout curve')
-        geo = self.plt('plot_geo', label='geometry')
-        u_p = self.plt('plot_u_p', label='displacement along the bond')
-        eps_p = self.plt('plot_eps_p', label='strain along the bond')
-        sig_p = self.plt('plot_sig_p', label='stress along the bond')
-        s = self.plt('plot_s', label='slip along the bond')
-        sf = self.plt('plot_sf', label='shear flow along the bond')
-        energy = self.hist.plt('plot_G_t', label='energy')
-        dissipation = self.hist.plt('plot_dG_t', label='energy release')
-        pp0 = PlotPerspective(
-            name='geo',
-            viz2d_list=[geo],
-            positions=[111],
-        )
-        pp1 = PlotPerspective(
-            name='history',
-            viz2d_list=[Pw, geo, energy, dissipation],
-            positions=[221, 222, 223, 224],
-        )
-        pp2 = PlotPerspective(
-            name='fields',
-            viz2d_list=[s, u_p, eps_p, sig_p],
-            twinx=[(s, sf, False)],
-            positions=[221, 222, 223, 224],
-        )
-        win = BMCSWindow(model=self)
-        win.viz_sheet.pp_list = [pp0, pp1, pp2]
-        win.viz_sheet.selected_pp = pp0
-        win.viz_sheet.monitor_chunk_size = 10
-        return win
+        self.history.t_slider = self.t
+        self.history.plot_geo(ax_geo)
+        self.history.plot_Pw(ax_Pw)
+        # The plotting of energy must be done selectively for the
+        # case that the appropriate model has been selected.
+#        self.history.plot_G_t(ax_energy)
+#        self.history.plot_dG_t(ax_dG_t)

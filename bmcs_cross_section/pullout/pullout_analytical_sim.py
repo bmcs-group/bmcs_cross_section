@@ -11,8 +11,6 @@ from traits.api import \
     Property, Instance, cached_property, \
     Bool, List, Float, Trait, Int, on_trait_change, \
     Dict, Str
-from traitsui.api import \
-    View, Item, VGroup, Group
 from ibvpy.view.plot2d import Viz2D, Vis2D
 from ibvpy.view.ui import BMCSLeafNode
 from ibvpy.view.window import BMCSWindow, TLine
@@ -44,13 +42,6 @@ class MaterialParams(BMCSLeafNode):
                        desc="frictional bond strength",
                        enter_set=True,
                        auto_set=False)
-
-    view = View(VGroup(Group(Item('E_f', full_size=True, resizable=True),
-                             Item('tau_pi_bar'), show_border=True,
-                             label='Material parameters'),
-                       ))
-
-    tree_view = view
 
 
 class Viz2DPullOutFW(Viz2D):
@@ -130,12 +121,6 @@ class Viz2DPullOutField(Viz2D):
 
     adaptive_y_range = Bool(True)
     initial_plot = Bool(True)
-
-    traits_view = View(
-        Item('plot_fn'),
-        Item('y_min', ),
-        Item('y_max', )
-    )
 
 
 class PullOutModel(Simulator, Vis2D):

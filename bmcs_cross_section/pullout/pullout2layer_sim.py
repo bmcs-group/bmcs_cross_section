@@ -25,9 +25,6 @@ from traits.api import \
     Array, Button
 from traits.api import \
     on_trait_change, Tuple
-from traitsui.api import \
-    View, Item, Group
-from traitsui.ui_editors.array_view_editor import ArrayViewEditor
 from view.plot2d import Viz2D, Vis2D
 from view.ui import BMCSLeafNode
 from view.ui.bmcs_tree_node import itags_str
@@ -154,13 +151,6 @@ class Viz2DPullOutFW(Viz2D):
     def plot_tex(self, ax, vot, *args, **kw):
         self.plot(ax, vot, *args, **kw)
 
-    traits_view = View(
-        Item('name', style='readonly'),
-        Item('show_legend'),
-        Item('show_data')
-    )
-
-
 class Viz2DPullOutField(Viz2D):
     '''Plot adaptor for the pull-out simulator.
     '''
@@ -210,13 +200,6 @@ class Viz2DPullOutField(Viz2D):
 
     adaptive_y_range = Bool(True)
     initial_plot = Bool(True)
-
-    traits_view = View(
-        Item('plot_fn', resizable=True, full_size=True),
-        Item('y_min', ),
-        Item('y_max', ),
-        Item('adaptive_y_range')
-    )
 
 
 class Viz2DEnergyPlot(Viz2D):
@@ -282,15 +265,6 @@ class CrossSection(BMCSLeafNode, RInputRecord):
                 auto_set=False, enter_set=True,
                 desc='perimeter of the bond interface')
 
-    view = View(
-        Item('A_m'),
-        Item('A_f'),
-        Item('P_b')
-    )
-
-    tree_view = view
-
-
 class Geometry(BMCSLeafNode, RInputRecord):
 
     node_name = 'geometry'
@@ -302,32 +276,10 @@ class Geometry(BMCSLeafNode, RInputRecord):
                 auto_set=False, enter_set=True,
                 desc='embedded length')
 
-    view = View(
-        Item('L_x'),
-    )
-
-    tree_view = view
-
 
 class DataSheet(HasStrictTraits):
 
     data = Array(np.float_)
-
-    view = View(
-        Item('data',
-             show_label=False,
-             resizable=True,
-             editor=ArrayViewEditor(titles=['x', 'y', 'z'],
-                                    format='%.4f',
-                                    # Font fails with wx in OSX;
-                                    #   see traitsui issue #13:
-                                    # font   = 'Arial 8'
-                                    )
-             ),
-        width=0.5,
-        height=0.6
-    )
-
 
 class PullOut2LayerSim(Simulator):
 
@@ -357,20 +309,6 @@ class PullOut2LayerSim(Simulator):
             self.cross_section2,
             self.geometry,
         ]
-
-    tree_view = View(
-        Group(
-            Item('mats_eval_type1', resizable=True, full_size=True),
-            Item('mats_eval_type2', resizable=True, full_size=True),
-            Item('control_variable', resizable=True, full_size=True),
-            Item('w_max', resizable=True, full_size=True),
-            Item('n_e_x', resizable=True, full_size=True),
-            Item('fixed_boundary'),
-            Group(
-                Item('loading_scenario@', show_label=False),
-            )
-        )
-    )
 
     #=========================================================================
     # Test setup parameters

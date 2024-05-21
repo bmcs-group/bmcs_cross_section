@@ -1,7 +1,7 @@
 
 import bmcs_utils.api as bu
 
-class MatMod(bu.InteractiveModel):
+class MatMod(bu.Model):
     """Base class for material models"""
 
     def get_eps_plot_range(self):

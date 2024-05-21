@@ -1,47 +1,40 @@
-from .cs_layout import CrossSectionLayout
-from .cs_shape import Rectangle, Circle, TShape, CustomShape, ICrossSectionShape
-from bmcs_utils.api import Model, Item, View
+# Importing required modules and classes
+from .cs_layout_dict import CrossSectionLayout
+from .cs_shape import Rectangle, Circle, TShape, CustomShape, ICrossSectionShape, IShape
+from bmcs_utils.api import Model, Item, View, Float, EitherType, Instance
+from bmcs_cross_section.matmod import PWLConcreteMatMod, EC2PlateauConcreteMatMod, EC2ConcreteMatMod
 import traits.api as tr
-from bmcs_utils.trait_types import \
-    Float, Bool, Int, FloatRangeEditor, EitherType, Instance
-from bmcs_cross_section.matmod import \
-    PWLConcreteMatMod, EC2ConcreteMatMod
-
-
 
 class CrossSectionDesign(Model):
-    name = 'Cross Section Design'
+    name = 'Cross Section Design' # Name of the instance
 
-    matrix = EitherType(options=[
-        ('piecewise linear', PWLConcreteMatMod),
-        ('EC2 with plateau', EC2ConcreteMatMod)
+    matrix = EitherType(
+        options=[
+            ('EC2', EC2ConcreteMatMod),
+            ('EC2 with plateau', EC2PlateauConcreteMatMod),
+            ('piecewise linear', PWLConcreteMatMod),
         ], MAT=True)
 
-
     cross_section_layout = Instance(CrossSectionLayout)
-
-    def _cross_section_layout_default(self):
-        return CrossSectionLayout(cs_design=self)
-
+    depends_on = ['matrix', 'cross_section_layout', 'cross_section_shape']
     tree = ['matrix','cross_section_layout','cross_section_shape']
 
-    csl = tr.Property
-    def _get_csl(self):
-        return self.cross_section_layout
+    csl = tr.Property(lambda self: self.cross_section_layout)
 
-    H = tr.DelegatesTo('cross_section_shape_')
+    H = tr.Property(Float, lambda self: self.cross_section_shape_.H, 
+                    lambda self, value: setattr(self.cross_section_shape_, "H", value))
 
     cross_section_shape = EitherType(
-                          options=[('rectangle', Rectangle),
-                                    ('circle', Circle),
-                                    ('T-shape', TShape),
-                                   ('custom', CustomShape)],
-                          CS=True, tree=True )
+        options=[
+            ('rectangle', Rectangle),
+            ('I-shape', IShape),
+            ('T-shape', TShape),
+            ('custom', CustomShape)
+        ], CS=True, tree=True)
 
     ipw_view = View(
-        Item('matrix', latex=r'\mathrm{concrete behavior}'),
-        Item('cross_section_shape', latex=r'\mathrm{shape}'),
-        Item('cross_section_layout', latex=r'\mathrm{layout}'),
+        Item('matrix', latex=r'\mathrm{Conc.~law}', editor=EitherType(show_properties=False)),
+        Item('cross_section_shape', latex=r'\mathrm{CS~shape}', editor=EitherType(show_properties=False)),
     )
 
     def subplots(self, fig):
