@@ -134,7 +134,7 @@ class CompositeCrossSection(SimDBClass):
         '''thickness of each fabric layup.
         '''
         return array([flu.thickness for flu in self.fabric_layup_list],
-                     dtype='float_')
+                     dtype='float64')
 
     thickness = Property(Float, unit='m', depends_on='input_change')
 
@@ -151,7 +151,7 @@ class CompositeCrossSection(SimDBClass):
         '''textile cross section of each fabric layup.
         '''
         return array([flu.a_tex for flu in self.fabric_layup_list],
-                     dtype='float_')
+                     dtype='float64')
 
     a_tex = Property(Float, unit='mm^2/m', depends_on='input_change')
 
@@ -176,7 +176,7 @@ class CompositeCrossSection(SimDBClass):
         '''reinforcement ration of each fabric layup.
         '''
         return array([flu.rho for flu in self.fabric_layup_list],
-                     dtype='float_')
+                     dtype='float64')
 
     E_tex_arr = Property(Array(Float, unit='MPa'), depends_on='input_change')
 
@@ -185,7 +185,7 @@ class CompositeCrossSection(SimDBClass):
         '''textile E-modulus of each fabric layup.
         '''
         return array([flu.E_tex for flu in self.fabric_layup_list],
-                     dtype='float_')
+                     dtype='float64')
 
     E_tex = Property(Float, unit='MPa', depends_on='input_change')
 

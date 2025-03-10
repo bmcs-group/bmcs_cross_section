@@ -30,7 +30,7 @@ class ExTypeSave( object ):
             delta_arr = fabs( data_arr[1:] - data_arr[:-1] )
             ydata, xdata = histogram( delta_arr, bins = 1000, normed = True )
             cs_hg = cumsum( ydata )
-            norm_cs_hg = hstack( [zeros( (1,), dtype = 'float_' ), cs_hg / fabs( cs_hg[-1] )] )
+            norm_cs_hg = hstack( [zeros( (1,), dtype = 'float64' ), cs_hg / fabs( cs_hg[-1] )] )
             max_delta = fabs( xdata[-1] )
             norm_xdata = xdata / max_delta
             #print 'hy',norm_cs_hg

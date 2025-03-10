@@ -31,18 +31,18 @@ class CrossSectionLayout(ModelList):
 
     @tr.Property
     def z_j(self):
-        return np.array([r.z for r in self.items], dtype=np.float_)
+        return np.array([r.z for r in self.items], dtype=np.float64)
 
     @tr.Property
     def p_j(self):
-        return np.array([r.p for r in self.items], dtype=np.float_)
+        return np.array([r.p for r in self.items], dtype=np.float64)
 
     @tr.Property
     def A_j(self):
-        return np.array([r.A for r in self.items], dtype=np.float_)
+        return np.array([r.A for r in self.items], dtype=np.float64)
 
     def get_N_tj(self, eps_tj):
-        return np.array([r.get_N(eps_t) for r, eps_t in zip(self.items, eps_tj.T)], dtype=np.float_).T
+        return np.array([r.get_N(eps_t) for r, eps_t in zip(self.items, eps_tj.T)], dtype=np.float64).T
 
     ipw_view = View(
         Item('add_reinf_layer_btn', editor=ButtonEditor(icon='plus', label='Add reinf. layer')),

@@ -133,7 +133,7 @@ class PulloutHist(Hist, bu.Model, Vis2D):
             Eps_Dt = Eps_t[0]
         else:
             Eps_Dt = {
-                key: np.array([Eps[key] for i, Eps in enumerate(Eps_t)], dtype=np.float_)
+                key: np.array([Eps[key] for i, Eps in enumerate(Eps_t)], dtype=np.float64)
                 for key in keys
             }
         sig_tEms, _ = txdomain.tmodel.get_corr_pred(eps_tEms, t_n1, **Eps_Dt)
@@ -287,7 +287,7 @@ class PulloutHist(Hist, bu.Model, Vis2D):
         d = h * 0.1  # A_f / A_m
 
         L_b = self.tstep_source.geometry.L_x
-        x_C = np.array([[-L_b, 0], [0, 0], [0, h], [-L_b, h]], dtype=np.float_)
+        x_C = np.array([[-L_b, 0], [0, 0], [0, h], [-L_b, h]], dtype=np.float64)
         ax.fill(*x_C.T, color='gray', alpha=0.3)
 
         f_top = h / 2 + d / 2
@@ -297,10 +297,10 @@ class PulloutHist(Hist, bu.Model, Vis2D):
 
         line_F, = ax.fill([], [], color='black', alpha=0.8)
         x_F = np.array([[-L_b + w_L_b, f_bot], [w, f_bot],
-                        [w, f_top], [-L_b + w_L_b, f_top]], dtype=np.float_)
+                        [w, f_top], [-L_b + w_L_b, f_top]], dtype=np.float64)
         line_F.set_xy(x_F)
         x_F0 = np.array([[-L_b, f_bot], [-L_b + w_L_b, f_bot],
-                         [-L_b + w_L_b, f_top], [-L_b, f_top]], dtype=np.float_)
+                         [-L_b + w_L_b, f_top], [-L_b, f_top]], dtype=np.float64)
         line_F0, = ax.fill([], [], color='white', alpha=1)
         line_F0.set_xy(x_F0)
 

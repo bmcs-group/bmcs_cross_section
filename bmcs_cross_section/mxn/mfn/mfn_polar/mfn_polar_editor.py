@@ -72,7 +72,7 @@ def _get_radius_arr_plt(radius_arr, frac_noplot, plotrange_min, plotrange_max):
     vcoord_trans_plt = frompyfunc(coord_trans_plt, 4, 1)
     radius_arr_plt = array(vcoord_trans_plt(radius_arr, frac_noplot,
                                             plotrange_min, plotrange_max),
-                           dtype='float_')
+                           dtype='float64')
     return radius_arr_plt
 
 
@@ -85,7 +85,7 @@ def unitcircle_fn(theta_value, frac_noplot, plotrange_min, plotrange_max):
 def _get_unitcircle_arr(theta_arr, frac_noplot, plotrange_min, plotrange_max):
     vunitcircle_fn = frompyfunc(unitcircle_fn, 4, 1)
     return array(vunitcircle_fn(theta_arr, frac_noplot, plotrange_min,
-                                plotrange_max), dtype='float_')
+                                plotrange_max), dtype='float64')
 
 
 class MFnPolarPlotItem(Item):

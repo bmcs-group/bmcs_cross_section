@@ -124,9 +124,9 @@ class RunTableAdapter ( TabularAdapter ):
     def _get_index_text ( self ):
         return str( self.row )
     
-    float_width = Float( 100 )
-    float_text = Property
-    def _get_float_text( self ):
+    float64width = Float( 100 )
+    float64text = Property
+    def _get_float64text( self ):
         factor_idx = self.column - 1
         value = self.object.input_table[ self.row, factor_idx ]
         return '%6.2f' % value

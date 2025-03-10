@@ -209,7 +209,7 @@ class PullOutModel(Simulator, Vis2D):
             w = self.w_max * self.loading_scenario(t)
             state_vars = \
                 self.analytical_po_model(w)
-            t_ = np.array([t], dtype=np.float_)
+            t_ = np.array([t], dtype=np.float64)
             for sv_record, state in zip(sv_records,
                                         (t_, w) + state_vars):
                 sv_record.append(np.copy(state))

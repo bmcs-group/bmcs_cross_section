@@ -124,7 +124,7 @@ class MFnPolar(HasTraits):
         return array(vradius_fn(self.theta, self.alpha, self.delta_alpha,
                                 self.delta_trans, self.strech_residual,
                                 self.strech_quasibrittle, self.phi_residual,
-                                self.phi_quasibrittle), dtype='float_')
+                                self.phi_quasibrittle), dtype='float64')
 
     def __call__(self, theta_value):
         # return a single value for the specified theta_value

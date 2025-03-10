@@ -121,7 +121,7 @@ class ExType(SimDBClass):
 
     # define processing
     #
-    processed_data_array = Array('float_', transient=True)
+    processed_data_array = Array('float64', transient=True)
 
     def process_source_data(self):
         '''process the source data and assign

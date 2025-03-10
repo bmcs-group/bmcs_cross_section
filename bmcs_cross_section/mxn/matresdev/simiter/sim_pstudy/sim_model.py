@@ -81,7 +81,7 @@ class SimModel( HasTraits ):
         time.sleep(1)
         return array( [self.get_output_1(), 
                        self.get_output_2() ], 
-                       dtype = 'float_' )
+                       dtype = 'float64' )
         
 def run():
     from .sim_pstudy import SimPStudy

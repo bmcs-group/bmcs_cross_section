@@ -167,7 +167,7 @@ class ConcreteMaterialModelAdv(ConcreteMatMod, bu.InjectSymbExpr):
         '''
         sig_w = self.get_sig_w(u_a[...,0],u_a[...,1])
         tau_s = self.get_tau_s(u_a[...,0],u_a[...,1])
-        return np.einsum('b...->...b', np.array([sig_w, tau_s], dtype=np.float_)) #, tau_s
+        return np.einsum('b...->...b', np.array([sig_w, tau_s], dtype=np.float64)) #, tau_s
 
     def get_sig_w(self,w, s):
         return self.symb.get_sig_w(w, s)

@@ -36,7 +36,7 @@ class CrossSectionLayout(ModelDict):
     z_j = tr.Property
 
     def _get_z_j(self):
-        return np.array([r.z for r in self.items.values()], dtype=np.float_)
+        return np.array([r.z for r in self.items.values()], dtype=np.float64)
 
     p_j = tr.Property
     '''
@@ -44,25 +44,25 @@ class CrossSectionLayout(ModelDict):
     '''
 
     def _get_p_j(self):
-        return np.array([r.p for r in self.items.values()], dtype=np.float_)
+        return np.array([r.p for r in self.items.values()], dtype=np.float64)
 
     A_j = tr.Property
 
     def _get_A_j(self):
-        return np.array([r.A for r in self.items.values()], dtype=np.float_)
+        return np.array([r.A for r in self.items.values()], dtype=np.float64)
 
     eps_0_j = tr.Property
     """Prestressing strain
     """
     def _get_eps_0_j(self):
-        return np.array([r.eps_0 for r in self.items.values()], dtype=np.float_)
+        return np.array([r.eps_0 for r in self.items.values()], dtype=np.float64)
 
 
     def get_N_tj(self, eps_tj):
         eps_tot_tj = self.eps_0_j + eps_tj
         return np.array([r.get_N(eps_t)
                          for r, eps_t in zip(self.items.values(), eps_tot_tj.T)],
-                        dtype=np.float_).T
+                        dtype=np.float64).T
 
     ipw_view = View(
         Item('add_reinf_layer_btn', editor=ButtonEditor(icon='plus', label='Add reinf. layer')),

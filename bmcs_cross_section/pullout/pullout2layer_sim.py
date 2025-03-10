@@ -279,7 +279,7 @@ class Geometry(BMCSLeafNode, RInputRecord):
 
 class DataSheet(HasStrictTraits):
 
-    data = Array(np.float_)
+    data = Array(np.float64)
 
 class PullOut2LayerSim(Simulator):
 
