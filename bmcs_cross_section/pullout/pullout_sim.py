@@ -21,7 +21,7 @@ from ibvpy.view.plot2d import Vis2D
 from ibvpy.view.reporter import RInputRecord
 from ibvpy.view.ui import BMCSLeafNode, BMCSRootNode
 from scipy import interpolate as ip
-from scipy.integrate import cumtrapz
+from scipy.integrate import cumulative_trapezoid as cumtrapz
 from traits.api import \
     Property, cached_property, \
     HasStrictTraits, Bool, List, Float, Int, Enum, \
@@ -551,15 +551,15 @@ class CrossSection(BMCSLeafNode, RInputRecord):
     A_f = bu.Float(153.9,
                    CS=True,
                    input=True,
-                   unit='$\\mathrm{mm}^2$',
-                   symbol='A_\mathrm{f}',
+                   unit=r'$\\mathrm{mm}^2$',
+                   symbol=r'A_\mathrm{f}',
                    auto_set=False, enter_set=True,
                    desc='reinforcement area')
     P_b = bu.Float(44,
                    CS=True,
                    input=True,
-                   unit='$\\mathrm{mm}$',
-                   symbol='p_\mathrm{b}',
+                   unit=r'$\\mathrm{mm}$',
+                   symbol=r'p_\mathrm{b}',
                    auto_set=False, enter_set=True,
                    desc='perimeter of the bond interface')
 
@@ -575,7 +575,7 @@ class Geometry(BMCSLeafNode, RInputRecord):
     L_x = bu.Float(45,
                    GEO=True,
                    input=True,
-                   unit='$\mathrm{mm}$',
+                   unit=r'$\mathrm{mm}$',
                    symbol='L',
                    auto_set=False, enter_set=True,
                    desc='embedded length')
@@ -706,7 +706,7 @@ class PullOutModel(TStepBC, BMCSRootNode, Vis2D):
                    MESH=True,
                    auto_set=False,
                    enter_set=True,
-                   symbol='n_\mathrm{E}',
+                   symbol=r'n_\mathrm{E}',
                    unit='-',
                    desc='number of finite elements along the embedded length'
                    )
@@ -716,13 +716,13 @@ class PullOutModel(TStepBC, BMCSRootNode, Vis2D):
     # =========================================================================
     k_max = Int(400,
                 unit='-',
-                symbol='k_{\max}',
+                symbol=r'k_{\max}',
                 desc='maximum number of iterations',
                 ALG=True)
 
     tolerance = Float(1e-4,
                       unit='-',
-                      symbol='\epsilon',
+                      symbol=r'\epsilon',
                       desc='required accuracy',
                       ALG=True)
 
@@ -790,7 +790,7 @@ class PullOutModel(TStepBC, BMCSRootNode, Vis2D):
     # Boundary conditions
     # =========================================================================
     w_max = bu.Float(1, BC=True,
-                     symbol='w_{\max}',
+                     symbol=r'w_{\max}',
                      unit='mm',
                      desc='maximum pullout slip',
                      auto_set=False, enter_set=True)
