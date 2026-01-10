@@ -60,15 +60,38 @@ class SteelRebarComponent(ReinforcementComponent):
         sig_design = sig_char / self.gamma_s
         
         return sig_design
+    
+    def get_characteristic_stress_strain(self, eps: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
+        """
+        Get characteristic stress-strain curve.
+        
+        For steel: uses matmod directly (f_yk, eps_uk with hardening).
+        """
+        # Matmod represents characteristic behavior
+        return self.matmod.get_sig(eps)
 
 
-def create_steel_rebar_catalog() -> pd.DataFrame:
+def create_steel_rebar_catalog(use_cache: bool = True) -> pd.DataFrame:
     """
     Create catalog of standard steel rebars.
     
+    Args:
+        use_cache: If True, use cached catalog (default). 
+                   If False, create fresh catalog.
+    
     Returns:
         DataFrame with all standard products
+        
+    Note:
+        By default, this function uses cached catalogs stored in JSON format.
+        The catalog is created once and loaded from cache on subsequent calls.
+        Use use_cache=False to force recreation (useful for development).
     """
+    if use_cache:
+        from bmcs_cross_section.cs_components.catalog_manager import get_catalog_manager
+        return get_catalog_manager().get_steel_catalog()
+    
+    # Original creation logic (used when cache is bypassed or first time)
     catalog = []
     
     # Standard diameters (EC2)

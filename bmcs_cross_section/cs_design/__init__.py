@@ -1,40 +1,55 @@
 """
-Cross-section design module.
+Cross-section design module - Modern Pydantic-based implementation.
 
-Modern implementation:
-- shapes: Geometric shape classes (RectangularShape, TShape, IShape)
-- reinforcement: Reinforcement layer classes (ReinforcementLayer, ReinforcementLayout)
+This module provides a clean, type-safe API for cross-section design with:
+- Geometric shapes (RectangularShape, TShape, IShape)
+- Catalog-integrated reinforcement layers (proxy pattern)
+- Complete cross-section assembly
 
-Legacy modules (being refactored):
-- cs_design, cs_layout_dict, cs_shape, cs_reinf_layer
+Reinforcement Layer Types:
+- BarReinforcement: Proxy to bar catalog components (steel, carbon)
+- LayerReinforcement: Proxy to textile/mat catalog components
+- AreaReinforcement: Product-independent (explicit area + material)
+- ReinforcementLayout: Container accepting all layer types
+
+Legacy traits-based modules have been moved to legacy/ folder.
 """
 
-# Modern API
+# Geometric shapes
 from .shapes import RectangularShape, TShape, IShape
+
+# Reinforcement layers (catalog-integrated proxies)
 from .reinforcement import (
-    ReinforcementLayer,
+    # Catalog-integrated layer types
+    BarReinforcement,
+    LayerReinforcement,
+    AreaReinforcement,
+    # Container and utilities
     ReinforcementLayout,
     create_symmetric_reinforcement,
-    create_distributed_reinforcement
+    create_distributed_reinforcement,
+    # Legacy compatibility (deprecated - use AreaReinforcement)
+    ReinforcementLayer,
 )
+
+# Cross-section assembly
 from .cross_section import CrossSection
 
-# Legacy API (commented out to avoid dependencies during refactoring)
-# from .cs_design import CrossSectionDesign
-# from .cs_layout_dict import CrossSectionLayout
-# from .cs_shape import CustomShape, TShape as TShapeLegacy, Rectangle, Circle, ICrossSectionShape, IShape as IShapeLegacy
-# from .cs_reinf_layer import FabricLayer, BarLayer, ReinfLayer
-
 __all__ = [
-    # Modern API - Shapes
+    # Shapes
     'RectangularShape',
     'TShape',
     'IShape',
-    # Modern API - Reinforcement
-    'ReinforcementLayer',
+    # Reinforcement - Catalog-integrated proxies
+    'BarReinforcement',
+    'LayerReinforcement',
+    'AreaReinforcement',
+    # Reinforcement - Container and utilities
     'ReinforcementLayout',
     'create_symmetric_reinforcement',
     'create_distributed_reinforcement',
-    # Modern API - Cross-section assembly
+    # Cross-section assembly
     'CrossSection',
+    # Deprecated (use AreaReinforcement instead)
+    'ReinforcementLayer',
 ]

@@ -10,6 +10,7 @@ import pandas as pd
 from dataclasses import dataclass
 
 from bmcs_cross_section.cs_components.component_base import ReinforcementComponent
+from bmcs_cross_section.matmod import create_carbon
 
 
 @dataclass
@@ -51,10 +52,22 @@ class CarbonBarComponent(ReinforcementComponent):
         # Carbon FRP typically has higher safety factor
         if self.gamma_s == 1.15:  # If default
             self.gamma_s = 1.25  # EC2-like value for FRP
+        
+        # Create material model if not provided
+        if self.matmod is None:
+            # Use characteristic values with factor=1.0
+            self.matmod = create_carbon(
+                grade='C2000',  # Standard COMBAR grade
+                factor=1.0,     # Characteristic values
+                post_peak_factor=2.5  # For numerical stability
+            )
+            # Override with actual component properties
+            self.matmod.E = self.E
+            self.matmod.f_t = self.f_tk
     
     def get_design_stress_strain(self, eps: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
         """
-        Linear elastic to failure for carbon bars.
+        Linear elastic to failure for carbon bars (design values).
         """
         # Design values
         f_td = self.f_td
@@ -68,14 +81,45 @@ class CarbonBarComponent(ReinforcementComponent):
         sig = np.where(np.abs(eps) > eps_ud, 0, sig)
         
         return sig
+    
+    def get_characteristic_stress_strain(self, eps: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
+        """
+        Linear elastic to failure for carbon bars (characteristic values).
+        """
+        # Characteristic values
+        f_tk = self.f_tk
+        eps_uk = self.eps_uk
+        
+        # Linear elastic
+        sig = np.minimum(self.E * np.abs(eps), f_tk)
+        sig = np.sign(eps) * sig  # Keep sign
+        
+        # Limit to ultimate strain
+        sig = np.where(np.abs(eps) > eps_uk, 0, sig)
+        
+        return sig
 
 
-def create_carbon_bar_catalog() -> pd.DataFrame:
+def create_carbon_bar_catalog(use_cache: bool = True) -> pd.DataFrame:
     """
     Create catalog of COMBAR products.
     
+    Args:
+        use_cache: If True, use cached catalog (default). 
+                   If False, create fresh catalog.
+    
     Typical COMBAR diameters: 6, 8, 10, 12, 14, 16, 20, 25, 28, 32 mm
+    
+    Note:
+        By default, this function uses cached catalogs stored in JSON format.
+        The catalog is created once and loaded from cache on subsequent calls.
+        Use use_cache=False to force recreation (useful for development).
     """
+    if use_cache:
+        from bmcs_cross_section.cs_components.catalog_manager import get_catalog_manager
+        return get_catalog_manager().get_carbon_catalog()
+    
+    # Original creation logic (used when cache is bypassed or first time)
     catalog = []
     
     # COMBAR typical properties

@@ -2,7 +2,11 @@
 Interactive Cross-Section Design Application
 ============================================
 
-Streamlit app for designing and analyzing reinforced concrete cross-sections.
+Streamlit app for designing reinforced concrete cross-sections with:
+- Material selection from component catalogs
+- Dynamic reinforcement layer management  
+- Bar, Layer, and Area reinforcement types
+- Live cross-section visualization
 
 Run with: streamlit run cross_section_design_app.py
 """
@@ -10,457 +14,1009 @@ Run with: streamlit run cross_section_design_app.py
 import streamlit as st
 import numpy as np
 import matplotlib.pyplot as plt
-from matplotlib.patches import Rectangle, Circle
+import pandas as pd
+from pathlib import Path
 
 from bmcs_cross_section.cs_design import (
     RectangularShape, TShape, IShape,
-    ReinforcementLayer, ReinforcementLayout,
-    CrossSection,
-    create_symmetric_reinforcement
-)
-from bmcs_cross_section.matmod.ec2_concrete import EC2Concrete
-from bmcs_cross_section.matmod.steel_reinforcement import create_steel
-
-# Page configuration
-st.set_page_config(
-    page_title="Cross-Section Design",
-    page_icon="🏗️",
-    layout="wide"
+    BarReinforcement, LayerReinforcement, AreaReinforcement,
+    ReinforcementLayout, CrossSection
 )
 
-st.title("🏗️ Reinforced Concrete Cross-Section Design")
-st.markdown("""
-Design and analyze reinforced concrete cross-sections with different geometries,
-materials, and reinforcement layouts. The app computes internal forces (N, M) for
-any strain distribution.
-""")
-
-# Sidebar for inputs
-st.sidebar.header("⚙️ Design Parameters")
-
-# Shape selection
-shape_type = st.sidebar.selectbox(
-    "Cross-Section Shape",
-    ["Rectangular", "T-Section", "I-Section"],
-    help="Select the geometric shape of the cross-section"
+from bmcs_cross_section.cs_components import (
+    get_catalog_manager,
+    get_concrete_by_class,
+    SteelRebarComponent,
+    CarbonBarComponent,
+    TextileReinforcementComponent
 )
 
-# Create tabs
-tab1, tab2, tab3, tab4 = st.tabs([
-    "📐 Geometry", 
-    "🔩 Reinforcement", 
-    "📊 Analysis", 
-    "📋 Summary"
-])
+from bmcs_cross_section.matmod import create_steel, create_carbon
 
-# ===========================
-# TAB 1: Geometry Definition
-# ===========================
-with tab1:
-    st.header("Cross-Section Geometry")
-    
-    col1, col2 = st.columns([1, 1])
-    
-    with col1:
-        st.subheader("Dimensions")
-        
-        if shape_type == "Rectangular":
-            b = st.number_input(
-                "Width b [mm]",
-                min_value=100.0,
-                max_value=2000.0,
-                value=300.0,
-                step=10.0,
-                help="Cross-section width"
-            )
-            h = st.number_input(
-                "Height h [mm]",
-                min_value=100.0,
-                max_value=3000.0,
-                value=500.0,
-                step=10.0,
-                help="Cross-section height"
-            )
-            shape = RectangularShape(b=b, h=h)
-            
-        elif shape_type == "T-Section":
-            b_f = st.number_input(
-                "Flange width b_f [mm]",
-                min_value=100.0,
-                max_value=3000.0,
-                value=600.0,
-                step=10.0,
-                help="Width of top flange"
-            )
-            h_f = st.number_input(
-                "Flange height h_f [mm]",
-                min_value=50.0,
-                max_value=500.0,
-                value=150.0,
-                step=10.0,
-                help="Height of top flange"
-            )
-            b_w = st.number_input(
-                "Web width b_w [mm]",
-                min_value=100.0,
-                max_value=1000.0,
-                value=200.0,
-                step=10.0,
-                help="Width of web"
-            )
-            h_w = st.number_input(
-                "Web height h_w [mm]",
-                min_value=100.0,
-                max_value=2000.0,
-                value=400.0,
-                step=10.0,
-                help="Height of web"
-            )
-            shape = TShape(b_f=b_f, h_f=h_f, b_w=b_w, h_w=h_w)
-            
-        else:  # I-Section
-            b_f = st.number_input(
-                "Flange width b_f [mm]",
-                min_value=100.0,
-                max_value=2000.0,
-                value=400.0,
-                step=10.0,
-                help="Width of flanges"
-            )
-            h_f = st.number_input(
-                "Flange height h_f [mm]",
-                min_value=50.0,
-                max_value=300.0,
-                value=100.0,
-                step=10.0,
-                help="Height of each flange"
-            )
-            b_w = st.number_input(
-                "Web width b_w [mm]",
-                min_value=50.0,
-                max_value=800.0,
-                value=150.0,
-                step=10.0,
-                help="Width of web"
-            )
-            h_w = st.number_input(
-                "Web height h_w [mm]",
-                min_value=100.0,
-                max_value=1500.0,
-                value=300.0,
-                step=10.0,
-                help="Height of web (between flanges)"
-            )
-            shape = IShape(b_f=b_f, h_f=h_f, b_w=b_w, h_w=h_w)
-        
-        # Geometric properties
-        h_display = shape.h_total if hasattr(shape, 'h_total') else shape.h
-        st.info(f"""
-        **Geometric Properties:**
-        - Total height: {h_display:.0f} mm
-        - Concrete area: {shape.area:,.0f} mm²
-        - Centroid: {shape.centroid_y:.1f} mm from bottom
-        - I_y: {shape.I_y:.2e} mm⁴
-        """)
-    
-    with col2:
-        st.subheader("Visualization")
-        fig, ax = plt.subplots(figsize=(6, 8))
-        
-        # Use object-oriented plotting via CrossSection
-        from bmcs_cross_section.cs_design.reinforcement import ReinforcementLayout
-        h_display = shape.h if shape_type == "Rectangular" else shape.h_total
-        empty_reinf = ReinforcementLayout()  # Empty reinforcement for geometry display
-        # Create default concrete for plotting (not used for calculations in this tab)
-        default_concrete = EC2Concrete(f_cm=38.0)
-        cs = CrossSection(shape=shape, concrete=default_concrete, reinforcement=empty_reinf)
-        cs.plot_cross_section(ax=ax, show_dimensions=False, show_reinforcement=False)
-        
-        # Mark centroid on centered plot
-        xlim = ax.get_xlim()
-        ax.plot(xlim, [shape.centroid_y, shape.centroid_y], 
-               'g--', linewidth=1, alpha=0.5, label='Centroid')
-        
-        ax.set_title(f'{shape_type} (Horizontally Centered)')
-        ax.legend()
-        
-        st.pyplot(fig)
-        plt.close()
+# ========================================
+# INITIALIZATION & SESSION STATE
+# ========================================
 
-# ===========================
-# TAB 2: Reinforcement
-# ===========================
-with tab2:
-    st.header("Reinforcement Layout")
-    
-    col1, col2 = st.columns([1, 1])
-    
-    with col1:
-        st.subheader("Material Properties")
-        
-        # Concrete
-        st.markdown("**Concrete:**")
-        f_cm = st.number_input(
-            "Mean compressive strength f_cm [MPa]",
-            min_value=20.0,
-            max_value=90.0,
-            value=38.0,
-            step=1.0,
-            help="Mean cylindrical compressive strength (f_cm = f_ck + 8 MPa)"
-        )
-        concrete = EC2Concrete(f_cm=f_cm)
-        st.info(f"f_ck = {concrete.f_ck:.1f} MPa | E_cm = {concrete.E_cm:.0f} MPa")
-        
-        # Steel
-        st.markdown("**Reinforcement Steel:**")
-        steel_grade = st.selectbox(
-            "Steel grade",
-            ["B500A", "B500B", "B500C"],
-            index=1,
-            help="Steel grade according to EC2"
-        )
-        steel = create_steel(steel_grade)
-        st.info(f"f_yk = {steel.f_sy:.0f} MPa | E_s = {steel.E_s:.0f} MPa")
-        
-        st.markdown("---")
-        st.subheader("Reinforcement Layers")
-        
-        # Symmetric reinforcement option
-        use_symmetric = st.checkbox("Use symmetric reinforcement", value=True)
-        
-        if use_symmetric:
-            cover = st.number_input(
-                "Concrete cover [mm]",
-                min_value=20.0,
-                max_value=100.0,
-                value=50.0,
-                step=5.0,
-                help="Distance from surface to reinforcement center"
-            )
-            A_s_top = st.number_input(
-                "Top steel area A_s,top [mm²]",
-                min_value=0.0,
-                max_value=10000.0,
-                value=402.0,
-                step=50.0,
-                help="Total steel area in top layer (e.g., 2Ø16 = 402 mm²)"
-            )
-            A_s_bottom = st.number_input(
-                "Bottom steel area A_s,bottom [mm²]",
-                min_value=0.0,
-                max_value=10000.0,
-                value=603.0,
-                step=50.0,
-                help="Total steel area in bottom layer (e.g., 3Ø16 = 603 mm²)"
-            )
-            
-            h_total = shape.h_total if hasattr(shape, 'h_total') else shape.h
-            reinf = create_symmetric_reinforcement(
-                h=h_total,
-                cover=cover,
-                A_s_top=A_s_top,
-                A_s_bottom=A_s_bottom,
-                material_top=steel,
-                material_bottom=steel
-            )
-        else:
-            st.info("Custom layer input not yet implemented. Use symmetric for now.")
-            cover = 50.0
-            A_s_top = 402.0
-            A_s_bottom = 603.0
-            h_total = shape.h_total if hasattr(shape, 'h_total') else shape.h
-            reinf = create_symmetric_reinforcement(
-                h=h_total,
-                cover=cover,
-                A_s_top=A_s_top,
-                A_s_bottom=A_s_bottom,
-                material_top=steel,
-                material_bottom=steel
-            )
-    
-    with col2:
-        st.subheader("Cross-Section with Reinforcement")
-        
-        # Create cross-section
-        cs = CrossSection(
-            shape=shape,
-            concrete=concrete,
-            reinforcement=reinf
-        )
-        
-        # Plot
-        fig, ax = plt.subplots(figsize=(6, 8))
-        cs.plot_cross_section(ax=ax, show_dimensions=True, show_reinforcement=True)
-        st.pyplot(fig)
-        plt.close()
-        
-        # Summary
-        st.info(f"""
-        **Reinforcement Summary:**
-        - Number of layers: {cs.reinforcement.n_layers}
-        - Total steel area: {cs.A_s:.0f} mm²
-        - Reinforcement ratio: ρ = {cs.reinforcement_ratio:.4f}
-        - Mechanical ratio: ω = {cs.reinforcement_ratio * steel.f_sy / concrete.f_ck:.4f}
-        """)
+def initialize_session_state():
+    """Initialize session state variables"""
+    if 'layers' not in st.session_state:
+        st.session_state.layers = []
+    if 'layer_counter' not in st.session_state:
+        st.session_state.layer_counter = 0
+    if 'concrete_selected' not in st.session_state:
+        st.session_state.concrete_selected = 'C30/37'
+    if 'shape_params' not in st.session_state:
+        st.session_state.shape_params = {
+            'type': 'Rectangular',
+            'b': 300.0,
+            'h': 500.0
+        }
+    if 'workflow_step' not in st.session_state:
+        st.session_state.workflow_step = 'Cross-Section'
 
-# ===========================
-# TAB 3: Analysis
-# ===========================
-with tab3:
-    st.header("Strain Distribution Analysis")
+def add_layer(layer_type):
+    """Add a new reinforcement layer"""
+    st.session_state.layer_counter += 1
+    layer_id = st.session_state.layer_counter
     
+    # Default position based on existing layers
+    if len(st.session_state.layers) == 0:
+        default_z = 450.0  # Bottom layer
+    elif len(st.session_state.layers) == 1:
+        default_z = 50.0   # Top layer
+    else:
+        default_z = 250.0  # Middle
+    
+    new_layer = {
+        'id': layer_id,
+        'type': layer_type,
+        'z': default_z,
+        'name': f'Layer {layer_id}',
+    }
+    
+    # Type-specific defaults
+    if layer_type == 'Bar':
+        new_layer.update({
+            'material': 'steel',
+            'diameter': 20,
+            'grade': 'B500B',
+            'count': 4
+        })
+    elif layer_type == 'Layer':
+        new_layer.update({
+            'material': 'carbon',
+            'roving_tex': 800,
+            'width': 300
+        })
+    else:  # Area
+        new_layer.update({
+            'A_s': 1000.0,
+            'material_type': 'steel',
+            'grade': 'B500B'
+        })
+    
+    st.session_state.layers.append(new_layer)
+
+def delete_layer(layer_id):
+    """Remove a layer by ID"""
+    st.session_state.layers = [l for l in st.session_state.layers if l['id'] != layer_id]
+
+def get_catalog_manager_cached():
+    """Get cached catalog manager"""
+    if 'catalog_manager' not in st.session_state:
+        st.session_state.catalog_manager = get_catalog_manager()
+    return st.session_state.catalog_manager
+
+# ========================================
+# CATALOG BROWSERS (Modal-like dialogs)
+# ========================================
+
+@st.dialog("🔍 Browse Steel Rebar Catalog", width="large")
+def browse_steel_catalog():
+    """Modal dialog for browsing steel catalog"""
+    manager = get_catalog_manager_cached()
+    catalog = manager.get_steel_catalog()
+    
+    st.markdown("### Available Steel Rebars")
+    
+    # Group by grade
+    grades = catalog['name'].apply(lambda x: x.split()[0] if 'B500' in x else 'Other').unique()
+    
+    selected_grade = st.selectbox("Filter by grade:", ['All'] + list(grades))
+    
+    if selected_grade != 'All':
+        catalog = catalog[catalog['name'].str.contains(selected_grade)]
+    
+    # Display table
+    display_cols = ['nominal_diameter', 'area', 'f_tk', 'f_td', 'product_id']
+    st.dataframe(catalog[display_cols], use_container_width=True)
+    
+    st.info(f"📊 {len(catalog)} products available")
+
+@st.dialog("🔍 Browse Carbon Bar Catalog", width="large")
+def browse_carbon_catalog():
+    """Modal dialog for browsing carbon catalog"""
+    manager = get_catalog_manager_cached()
+    catalog = manager.get_carbon_catalog()
+    
+    st.markdown("### Available Carbon Bars (COMBAR)")
+    
+    display_cols = ['nominal_diameter', 'area', 'f_tk', 'f_td', 'E', 'product_id']
+    st.dataframe(catalog[display_cols], use_container_width=True)
+    
+    st.info(f"📊 {len(catalog)} products available")
+
+@st.dialog("🔍 Browse Concrete Catalog", width="large")
+def browse_concrete_catalog():
+    """Modal dialog for browsing concrete catalog"""
+    manager = get_catalog_manager_cached()
+    catalog = manager.get_concrete_catalog()
+    
+    st.markdown("### Available Concrete Grades")
+    
+    display_cols = ['strength_class', 'f_ck', 'f_cm', 'f_cd', 'E_cm']
+    st.dataframe(catalog[display_cols], use_container_width=True)
+    
+    st.info(f"📊 {len(catalog)} grades available")
+
+# ========================================
+# SHAPE BUILDER
+# ========================================
+
+def build_shape():
+    """Build cross-section shape from session state"""
+    params = st.session_state.shape_params
+    
+    if params['type'] == 'Rectangular':
+        return RectangularShape(b=params['b'], h=params['h'])
+    elif params['type'] == 'T-Section':
+        return TShape(
+            b_f=params['b_f'], 
+            h_f=params['h_f'],
+            b_w=params['b_w'], 
+            h=params['h']
+        )
+    else:  # I-Section
+        return IShape(
+            b_f=params['b_f'],
+            h_f=params['h_f'],
+            b_w=params['b_w'],
+            h_w=params['h_w']
+        )
+
+# ========================================
+# REINFORCEMENT BUILDER
+# ========================================
+
+def build_reinforcement_from_layers():
+    """Build ReinforcementLayout from session state layers"""
+    layers = []
+    
+    for layer_data in st.session_state.layers:
+        try:
+            if layer_data['type'] == 'Bar':
+                # Create component
+                if layer_data['material'] == 'steel':
+                    component = SteelRebarComponent(
+                        nominal_diameter=layer_data['diameter'],
+                        grade=layer_data['grade']
+                    )
+                else:  # carbon
+                    component = CarbonBarComponent(
+                        nominal_diameter=layer_data['diameter']
+                    )
+                
+                # Create layer
+                layer = BarReinforcement(
+                    z=layer_data['z'],
+                    component=component,
+                    count=layer_data['count'],
+                    name=layer_data['name']
+                )
+                layers.append(layer)
+                
+            elif layer_data['type'] == 'Layer':
+                # Create textile component
+                component = TextileReinforcementComponent(
+                    product_id=f"TEXTILE-{layer_data['roving_tex']}",
+                    name=f"Textile {layer_data['roving_tex']}tex",
+                    material_type=layer_data['material'],
+                    roving_tex=layer_data['roving_tex'],
+                    spacing=14.0,  # Default
+                    A_roving=layer_data['roving_tex'] / 1670.0,  # Typical conversion
+                    f_tk=2500 if layer_data['material'] == 'carbon' else 1800,
+                    E=165000 if layer_data['material'] == 'carbon' else 72000
+                )
+                
+                layer = LayerReinforcement(
+                    z=layer_data['z'],
+                    component=component,
+                    width=layer_data['width'],
+                    name=layer_data['name']
+                )
+                layers.append(layer)
+                
+            else:  # Area
+                # Create material
+                if layer_data['material_type'] == 'steel':
+                    material = create_steel(layer_data['grade'])
+                else:  # carbon
+                    material = create_carbon('C2000')
+                
+                layer = AreaReinforcement(
+                    z=layer_data['z'],
+                    A_s=layer_data['A_s'],
+                    material=material,
+                    name=layer_data['name']
+                )
+                layers.append(layer)
+                
+        except Exception as e:
+            st.error(f"Error creating layer '{layer_data['name']}': {str(e)}")
+            continue
+    
+    return ReinforcementLayout(layers=layers)
+
+# ========================================
+# MAIN APP
+# ========================================
+
+def main():
+    # Page config
+    st.set_page_config(
+        page_title="SCADT - Cross-Section Design",
+        page_icon="📐",
+        layout="wide",
+        initial_sidebar_state="expanded"
+    )
+    
+    initialize_session_state()
+    
+    # Custom CSS to style Streamlit's native header bar
     st.markdown("""
-    Analyze the cross-section for a given strain distribution defined by:
-    - **Curvature κ**: Rate of strain change with height
-    - **Bottom strain ε_bottom**: Strain at bottom fiber (y=0)
+    <style>
+        /* Style the main header area */
+        header[data-testid="stHeader"] {
+            background-color: #1f77b4;
+            padding: 0.5rem 1rem;
+        }
+        
+        /* Hide default Streamlit branding if present */
+        header[data-testid="stHeader"] > div:first-child {
+            display: flex;
+            align-items: center;
+            width: 100%;
+        }
+        
+        /* Inject title into header */
+        header[data-testid="stHeader"]::before {
+            content: "SCADT — Structural Concrete Analysis and Design Tool";
+            color: white;
+            font-size: 1.5rem;
+            font-weight: 600;
+            font-family: 'Arial', sans-serif;
+            margin-right: auto;
+            white-space: nowrap;
+            flex-grow: 1;
+        }
+        
+        /* Ensure menu icon stays visible and white */
+        button[kind="header"] {
+            color: white !important;
+        }
+        
+        /* Style the toolbar buttons */
+        header[data-testid="stHeader"] button {
+            color: white !important;
+        }
+        
+        /* Make sidebar collapse button visible against blue background */
+        button[data-testid="collapsedControl"] {
+            background-color: white !important;
+            color: #1f77b4 !important;
+            border: 2px solid white !important;
+            z-index: 999999 !important;
+            display: block !important;
+            visibility: visible !important;
+        }
+        
+        button[data-testid="collapsedControl"]:hover {
+            background-color: #e9ecef !important;
+        }
+        
+        /* Force sidebar to be visible */
+        section[data-testid="stSidebar"] {
+            display: block !important;
+            visibility: visible !important;
+        }
+        
+        /* Remove ALL padding from sidebar */
+        section[data-testid="stSidebar"] > div:first-child {
+            padding-top: 0 !important;
+        }
+        
+        /* Remove padding from sidebar block container */
+        section[data-testid="stSidebar"] [data-testid="stVerticalBlock"] {
+            padding-top: 0 !important;
+            gap: 0 !important;
+        }
+        
+        /* Force logo container to top with negative margin */
+        section[data-testid="stSidebar"] [data-testid="stImage"]:first-of-type {
+            background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+            margin: -1rem -1rem 0 -1rem !important;
+            padding: 0.25rem 0.5rem !important;
+            height: 3.5rem !important;
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            border-bottom: 2px solid #1f77b4 !important;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        /* Logo sizing - fixed height, auto width */
+        section[data-testid="stSidebar"] [data-testid="stImage"]:first-of-type img {
+            height: 3rem !important;
+            width: auto !important;
+            max-width: 100% !important;
+            object-fit: contain !important;
+        }
+        
+        /* Style menu buttons */
+        section[data-testid="stSidebar"] button {
+            margin: 0.25rem 0 !important;
+            padding: 0.75rem 1rem !important;
+            font-size: 1.3rem !important;
+            font-weight: 700 !important;
+            border: none !important;
+            border-radius: 0 !important;
+            background: transparent !important;
+            color: #333 !important;
+            transition: background 0.2s ease !important;
+            text-align: center !important;
+        }
+        
+        section[data-testid="stSidebar"] button:hover {
+            background: #e9ecef !important;
+            border-radius: 0 !important;
+        }
+        
+        section[data-testid="stSidebar"] button:active {
+            background: #dee2e6 !important;
+            border-radius: 0 !important;
+        }
+        
+        /* Position logo at absolute bottom of sidebar */
+        section[data-testid="stSidebar"] [data-testid="stImage"]:last-of-type {
+            position: fixed !important;
+            bottom: 1rem !important;
+            left: 1rem !important;
+            right: 1rem !important;
+            width: calc(100% - 2rem) !important;
+        }
+    </style>
+    """, unsafe_allow_html=True)
     
-    The strain at any height y is: **ε(y) = ε_bottom - κ×y**
-    """)
+    # ========================================
+    # SIDEBAR - Workflow Navigation
+    # ========================================
     
-    col1, col2 = st.columns([1, 2])
-    
-    with col1:
-        st.subheader("Strain State")
+    with st.sidebar:
+        # Workflow menu using buttons
+        menu_items = ["Components", "Cross-Section", "Bending Analysis", "Summary"]
         
-        # Curvature
-        kappa = st.number_input(
-            "Curvature κ [1/mm]",
-            min_value=-0.0001,
-            max_value=0.0001,
-            value=0.00002,
-            step=0.000001,
-            format="%.6f",
-            help="Positive κ → compression at top, tension at bottom"
-        )
+        for item in menu_items:
+            is_selected = st.session_state.workflow_step == item
+            if is_selected:
+                st.markdown(f"""
+                <div style="background: linear-gradient(135deg, #1f77b4 0%, #1565c0 100%);
+                            color: white;
+                            padding: 0.75rem 1rem;
+                            margin: 0.25rem 0;
+                            font-size: 1.3rem;
+                            font-weight: 700;
+                            box-shadow: 0 2px 8px rgba(31, 119, 180, 0.3);
+                            cursor: default;
+                            text-align: center;">
+                    {item}
+                </div>
+                """, unsafe_allow_html=True)
+            else:
+                if st.button(item, key=f"menu_{item}", use_container_width=True):
+                    st.session_state.workflow_step = item
+                    st.rerun()
         
-        # Top strain (user-friendly input)
-        eps_top_desired = st.number_input(
-            "Desired top strain ε_top [-]",
-            min_value=-0.01,
-            max_value=0.01,
-            value=-0.002,
-            step=0.0001,
-            format="%.6f",
-            help="Negative = compression, Positive = tension"
-        )
+        workflow_step = st.session_state.workflow_step
         
-        # Convert to eps_bottom
-        eps_bottom = eps_top_desired + kappa * cs.h_total
-        
-        st.info(f"""
-        **Computed values:**
-        - ε_bottom = {eps_bottom:.6f}
-        - ε_top = {eps_top_desired:.6f}
-        - Δε = {kappa * cs.h_total:.6f}
-        """)
-        
-        # Compute forces
-        N, M = cs.get_N_M(kappa, eps_bottom)
+        # Push logo to bottom with spacer
+        st.markdown("<div style='flex-grow: 1;'></div>", unsafe_allow_html=True)
         
         st.markdown("---")
-        st.subheader("Internal Forces")
         
-        st.metric("Axial Force N", f"{N/1000:.1f} kN", 
-                 help="Negative = compression")
-        st.metric("Moment M", f"{M/1e6:.1f} kNm",
-                 help="About bottom fiber (y=0)")
-        
-        # Neutral axis
-        if abs(kappa) > 1e-12:
-            y_na = -eps_bottom / kappa
-            if 0 <= y_na <= cs.h_total:
-                st.success(f"✓ Neutral axis at y = {y_na:.1f} mm")
-            else:
-                st.warning(f"⚠ Neutral axis outside section (y = {y_na:.1f} mm)")
+        # Load and display logo at the bottom
+        logo_path = Path("rwth_cscp_bild_rgb.png")
+        if logo_path.exists():
+            st.image(str(logo_path), width="stretch")
     
-    with col2:
-        st.subheader("Distributions")
+    # ========================================
+    # MAIN CONTENT - Workflow-based
+    # ========================================
+    
+    # Parse workflow step
+    step_map = {
+        "Components": "components",
+        "Cross-Section": "cross_section",
+        "Bending Analysis": "analysis",
+        "Summary": "summary"
+    }
+    current_step = step_map[workflow_step]
+    
+    # ========================================
+    # STEP 1: COMPONENTS (Catalog Browsers)
+    # ========================================
+    
+    if current_step == "components":
+        st.header("Component Catalogs")
+        st.markdown("""
+        Browse available materials and products. View specifications, properties, and stress-strain curves.
+        Select materials in the **Cross-Section** step.
+        """)
         
-        # Create figure with strain and stress distributions
-        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 6))
+        # Catalog browsers as cards
+        col1, col2, col3 = st.columns(3)
         
-        # Strain distribution
-        cs.plot_strain_distribution(kappa, eps_bottom, ax=ax1)
+        with col1:
+            st.subheader("Concrete")
+            st.markdown("Strength grades according to EC2")
+            if st.button("Browse Concrete Catalog", use_container_width=True, type="primary"):
+                browse_concrete_catalog()
+            
+            st.caption("Available grades: C12/15 to C90/105")
         
-        # Stress distribution
-        cs.plot_stress_distribution(kappa, eps_bottom, ax=ax2)
+        with col2:
+            st.subheader("Steel Rebars")
+            st.markdown("Reinforcement bars (B500 series)")
+            if st.button("Browse Steel Catalog", use_container_width=True, type="primary"):
+                browse_steel_catalog()
+            
+            st.caption("Diameters: 6-40 mm")
         
-        plt.tight_layout()
-        st.pyplot(fig)
-        plt.close()
+        with col3:
+            st.subheader("Carbon Bars")
+            st.markdown("CFRP bars (COMBAR)")
+            if st.button("Browse Carbon Catalog", use_container_width=True, type="primary"):
+                browse_carbon_catalog()
+            
+            st.caption("Diameters: 6-32 mm")
         
-        # Get stress values
-        y_vals, eps_vals, sig_vals = cs.get_stress_distribution(kappa, eps_bottom)
+        st.markdown("---")
         
-        st.markdown("**Key Values:**")
-        col_a, col_b = st.columns(2)
-        with col_a:
-            st.metric("Top stress σ_top", f"{sig_vals[-1]:.2f} MPa")
-            st.metric("Bottom stress σ_bottom", f"{sig_vals[0]:.2f} MPa")
-        with col_b:
-            st.metric("Max compression", f"{np.min(sig_vals):.2f} MPa")
-            st.metric("Max tension", f"{np.max(sig_vals):.2f} MPa")
+        # Quick preview of selected materials
+        st.subheader("Currently Selected Materials")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.markdown("**Concrete:**")
+            concrete = get_concrete_by_class(st.session_state.concrete_selected)
+            st.info(f"""
+            Grade: {st.session_state.concrete_selected}  
+            f_ck = {concrete.f_ck:.1f} MPa  
+            f_cm = {concrete.f_cm:.1f} MPa  
+            E_cm = {concrete.E_cm:.0f} MPa
+            """)
+        
+        with col2:
+            st.markdown("**Reinforcement Layers:**")
+            if len(st.session_state.layers) == 0:
+                st.info("No layers added yet.\n\nGo to **Cross-Section** step to add layers.")
+            else:
+                layer_summary = []
+                for layer in st.session_state.layers:
+                    if layer['type'] == 'Bar':
+                        layer_summary.append(f"- {layer['name']}: {layer['count']}×Ø{layer['diameter']} {layer['material']}")
+                    elif layer['type'] == 'Layer':
+                        layer_summary.append(f"- {layer['name']}: Textile {layer['roving_tex']}tex")
+                    else:
+                        layer_summary.append(f"- {layer['name']}: A_s={layer['A_s']:.0f} mm²")
+                
+                st.info("\n".join(layer_summary))
+        
+        st.markdown("---")
+        st.info("**Next Step:** Go to **Cross-Section** to define geometry and reinforcement layout.")
+    
+    # ========================================
+    # STEP 2: CROSS-SECTION (Geometry + Reinforcement)
+    # ========================================
+    
+    elif current_step == "cross_section":
+        st.header("2️⃣ Cross-Section Definition")
+        
+        # Sub-tabs for Geometry and Reinforcement
+        subtab1, subtab2 = st.tabs(["Geometry", "Reinforcement Layout"])
+        
+        # --- GEOMETRY SUBTAB ---
+        with subtab1:
+            st.subheader("Geometry Definition")
+            
+            col1, col2 = st.columns([1, 1])
+        
+        with col1:
+            shape_type = st.selectbox(
+                "Shape Type",
+                ["Rectangular", "T-Section", "I-Section"],
+                key='shape_type_select'
+            )
+            st.session_state.shape_params['type'] = shape_type
+            
+            st.markdown("---")
+            
+            if shape_type == "Rectangular":
+                st.session_state.shape_params['b'] = st.number_input(
+                    "Width b [mm]", 100.0, 2000.0, 
+                    st.session_state.shape_params.get('b', 300.0), 10.0
+                )
+                st.session_state.shape_params['h'] = st.number_input(
+                    "Height h [mm]", 100.0, 3000.0,
+                    st.session_state.shape_params.get('h', 500.0), 10.0
+                )
+                
+            elif shape_type == "T-Section":
+                st.session_state.shape_params['b_f'] = st.number_input(
+                    "Flange width b_f [mm]", 100.0, 3000.0, 600.0, 10.0
+                )
+                st.session_state.shape_params['h_f'] = st.number_input(
+                    "Flange height h_f [mm]", 50.0, 500.0, 150.0, 10.0
+                )
+                st.session_state.shape_params['b_w'] = st.number_input(
+                    "Web width b_w [mm]", 100.0, 1000.0, 200.0, 10.0
+                )
+                st.session_state.shape_params['h'] = st.number_input(
+                    "Total height h [mm]", 200.0, 2000.0, 600.0, 10.0
+                )
+            
+            else:  # I-Section
+                st.session_state.shape_params['b_f'] = st.number_input(
+                    "Flange width b_f [mm]", 100.0, 2000.0, 400.0, 10.0
+                )
+                st.session_state.shape_params['h_f'] = st.number_input(
+                    "Flange height h_f [mm]", 50.0, 300.0, 100.0, 10.0
+                )
+                st.session_state.shape_params['b_w'] = st.number_input(
+                    "Web width b_w [mm]", 50.0, 800.0, 150.0, 10.0
+                )
+                st.session_state.shape_params['h_w'] = st.number_input(
+                    "Web height h_w [mm]", 100.0, 1500.0, 300.0, 10.0
+                )
+            
+            # Build and show properties
+            shape = build_shape()
+            h_total = shape.h if shape_type == "Rectangular" else shape.h_total
+            
+            st.success(f"""
+            **Geometric Properties:**
+            - Total height: {h_total:.0f} mm
+            - Area: {shape.area:,.0f} mm²
+            - Centroid: {shape.centroid_y:.1f} mm
+            - I_y: {shape.I_y:.2e} mm⁴
+            """)
+        
+        with col2:
+            st.markdown("### Visualization")
+            fig, ax = plt.subplots(figsize=(6, 8))
+            
+            # Get concrete for plotting
+            concrete = get_concrete_by_class(st.session_state.concrete_selected)
+            empty_reinf = ReinforcementLayout()
+            cs = CrossSection(shape=shape, concrete=concrete.matmod, reinforcement=empty_reinf)
+            cs.plot_cross_section(ax=ax, show_dimensions=True, show_reinforcement=False)
+            
+            st.pyplot(fig)
+            plt.close()
+        
+        # --- REINFORCEMENT LAYOUT SUBTAB ---
+        with subtab2:
+            st.subheader("Materials & Reinforcement")
+        
+        # ===== MATERIALS SECTION =====
+        st.subheader("Materials")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.markdown("**Concrete:**")
+            manager = get_catalog_manager_cached()
+            concrete_catalog = manager.get_concrete_catalog()
+            strength_classes = concrete_catalog['strength_class'].tolist()
+            
+            selected_class = st.selectbox(
+                "Strength Class",
+                strength_classes,
+                index=strength_classes.index(st.session_state.concrete_selected) 
+                      if st.session_state.concrete_selected in strength_classes else 0,
+                key='concrete_selector'
+            )
+            st.session_state.concrete_selected = selected_class
+            
+            concrete_comp = get_concrete_by_class(selected_class)
+            st.info(f"f_ck = {concrete_comp.f_ck:.1f} MPa | f_cm = {concrete_comp.f_cm:.1f} MPa | E_cm = {concrete_comp.E_cm:.0f} MPa")
+        
+        with col2:
+            st.markdown("**Default Steel Grade:**")
+            default_steel_grade = st.selectbox(
+                "Grade for Area Reinforcement",
+                ['B500A', 'B500B', 'B500C'],
+                index=1,
+                key='default_steel_grade'
+            )
+            steel_test = create_steel(default_steel_grade)
+            st.info(f"f_yk = {steel_test.f_sy:.0f} MPa | E_s = {steel_test.E_s:.0f} MPa")
+        
+            st.markdown("---")
+            
+            # ===== REINFORCEMENT LAYERS SECTION =====
+            st.subheader("Reinforcement Layers")
+            
+            # Add layer buttons (moved from sidebar)
+            st.markdown("**Add New Layer:**")
+            col1, col2, col3, col4 = st.columns([1, 1, 1, 2])
+            with col1:
+                if st.button("+ Bar", use_container_width=True, type="secondary"):
+                    add_layer('Bar')
+                    st.rerun()
+            with col2:
+                if st.button("+ Layer", use_container_width=True, type="secondary"):
+                    add_layer('Layer')
+                    st.rerun()
+            with col3:
+                if st.button("+ Area", use_container_width=True, type="secondary"):
+                    add_layer('Area')
+                    st.rerun()
+            with col4:
+                if st.button("Clear All", use_container_width=True):
+                    st.session_state.layers = []
+                    st.rerun()
+            
+            st.markdown("---")
+            
+            if len(st.session_state.layers) == 0:
+                st.info("No layers yet. Click the buttons above to add reinforcement layers.")
+            else:
+                # Display each layer
+                for layer_data in st.session_state.layers:
+                    layer_id = layer_data['id']
+                    
+                    with st.expander(f"**{layer_data['name']}** ({layer_data['type']})", expanded=True):
+                        # Layer controls
+                        lcol1, lcol2, lcol3 = st.columns([2, 2, 1])
+                    
+                    with lcol1:
+                        layer_data['name'] = st.text_input(
+                            "Layer Name",
+                            layer_data['name'],
+                            key=f'name_{layer_id}'
+                        )
+                    
+                    with lcol2:
+                        layer_data['z'] = st.number_input(
+                            "Position z [mm]",
+                            0.0, 2000.0,
+                            float(layer_data['z']),
+                            10.0,
+                            key=f'z_{layer_id}',
+                            help="Distance from bottom fiber"
+                        )
+                    
+                    with lcol3:
+                        if st.button("🗑️", key=f'del_{layer_id}', help="Delete layer"):
+                            delete_layer(layer_id)
+                            st.rerun()
+                    
+                    st.markdown("---")
+                    
+                    # Type-specific inputs
+                    if layer_data['type'] == 'Bar':
+                        bcol1, bcol2, bcol3 = st.columns(3)
+                        
+                        with bcol1:
+                            layer_data['material'] = st.radio(
+                                "Material",
+                                ['steel', 'carbon'],
+                                index=0 if layer_data['material'] == 'steel' else 1,
+                                key=f'mat_{layer_id}'
+                            )
+                        
+                        with bcol2:
+                            if layer_data['material'] == 'steel':
+                                # Steel catalog
+                                catalog = manager.get_steel_catalog()
+                                diameters = sorted(catalog['nominal_diameter'].unique())
+                                
+                                layer_data['diameter'] = st.selectbox(
+                                    "Diameter [mm]",
+                                    diameters,
+                                    index=diameters.index(layer_data['diameter']) if layer_data['diameter'] in diameters else 0,
+                                    key=f'diam_{layer_id}'
+                                )
+                                
+                                layer_data['grade'] = st.selectbox(
+                                    "Grade",
+                                    ['B500A', 'B500B', 'B500C'],
+                                    index=['B500A', 'B500B', 'B500C'].index(layer_data['grade']),
+                                    key=f'grade_{layer_id}'
+                                )
+                            else:  # carbon
+                                catalog = manager.get_carbon_catalog()
+                                diameters = sorted(catalog['nominal_diameter'].unique())
+                                
+                                layer_data['diameter'] = st.selectbox(
+                                    "Diameter [mm]",
+                                    diameters,
+                                    index=diameters.index(layer_data['diameter']) if layer_data['diameter'] in diameters else 0,
+                                    key=f'diam_{layer_id}'
+                                )
+                        
+                        with bcol3:
+                            layer_data['count'] = st.number_input(
+                                "Number of bars",
+                                1, 20,
+                                layer_data['count'],
+                                1,
+                                key=f'count_{layer_id}'
+                            )
+                        
+                        # Show computed area
+                        try:
+                            if layer_data['material'] == 'steel':
+                                comp = SteelRebarComponent(
+                                    nominal_diameter=layer_data['diameter'],
+                                    grade=layer_data['grade']
+                                )
+                            else:
+                                comp = CarbonBarComponent(
+                                    nominal_diameter=layer_data['diameter']
+                                )
+                            
+                            total_area = comp.area * layer_data['count']
+                            st.caption(f"{layer_data['count']}×Ø{layer_data['diameter']} = {total_area:.0f} mm² | Product: {comp.product_id}")
+                        except:
+                            st.caption("⚠️ Invalid configuration")
+                    
+                    elif layer_data['type'] == 'Layer':
+                        tcol1, tcol2, tcol3 = st.columns(3)
+                        
+                        with tcol1:
+                            layer_data['material'] = st.selectbox(
+                                "Material",
+                                ['carbon', 'glass', 'basalt'],
+                                index=0,
+                                key=f'tmat_{layer_id}'
+                            )
+                        
+                        with tcol2:
+                            layer_data['roving_tex'] = st.selectbox(
+                                "Roving [tex]",
+                                [800, 1600, 2400, 3200],
+                                index=0,
+                                key=f'roving_{layer_id}'
+                            )
+                        
+                        with tcol3:
+                            layer_data['width'] = st.number_input(
+                                "Width [mm]",
+                                50.0, 2000.0,
+                                float(layer_data['width']),
+                                10.0,
+                                key=f'width_{layer_id}'
+                            )
+                        
+                        # Show computed area
+                        spacing = 14.0  # Default
+                        A_roving = layer_data['roving_tex'] / 1670.0
+                        n_rovings = layer_data['width'] / spacing
+                        total_area = n_rovings * A_roving
+                        st.caption(f"{n_rovings:.1f} rovings × {A_roving:.2f} mm²/roving ≈ {total_area:.1f} mm²")
+                    
+                    else:  # Area
+                        acol1, acol2, acol3 = st.columns(3)
+                        
+                        with acol1:
+                            layer_data['A_s'] = st.number_input(
+                                "Area A_s [mm²]",
+                                0.0, 10000.0,
+                                float(layer_data['A_s']),
+                                50.0,
+                                key=f'area_{layer_id}'
+                            )
+                        
+                        with acol2:
+                            layer_data['material_type'] = st.selectbox(
+                                "Material Type",
+                                ['steel', 'carbon'],
+                                index=0 if layer_data['material_type'] == 'steel' else 1,
+                                key=f'amat_{layer_id}'
+                            )
+                        
+                        with acol3:
+                            if layer_data['material_type'] == 'steel':
+                                layer_data['grade'] = st.selectbox(
+                                    "Grade",
+                                    ['B500A', 'B500B', 'B500C'],
+                                    index=['B500A', 'B500B', 'B500C'].index(layer_data.get('grade', 'B500B')),
+                                    key=f'agrade_{layer_id}'
+                                )
+                        
+                        st.caption(f"ℹ️ Product-independent reinforcement (for design optimization)")
+        
+        st.markdown("---")
+        
+        # ===== LIVE PREVIEW =====
+        st.subheader("Live Preview")
+        
+        try:
+            shape = build_shape()
+            concrete = get_concrete_by_class(st.session_state.concrete_selected)
+            reinforcement = build_reinforcement_from_layers()
+            
+            cs = CrossSection(
+                shape=shape,
+                concrete=concrete.matmod,
+                reinforcement=reinforcement
+            )
+            
+            fig, ax = plt.subplots(figsize=(8, 10))
+            cs.plot_cross_section(ax=ax, show_dimensions=True, show_reinforcement=True)
+            st.pyplot(fig)
+            plt.close()
+            
+            # Summary
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("Layers", reinforcement.n_layers)
+            with col2:
+                st.metric("Total A_s", f"{cs.A_s:.0f} mm²")
+            with col3:
+                st.metric("Ratio ρ", f"{cs.reinforcement_ratio:.4f}")
+                    
+        except Exception as e:
+            st.error(f"⚠️ Error building cross-section: {str(e)}")
+            
+            st.markdown("---")
+            st.info("**Next Step:** Go to **Bending Analysis** to analyze strain distributions and compute forces.")
+    
+    # ========================================
+    # STEP 3: BENDING ANALYSIS
+    # ========================================
+    
+    elif current_step == "analysis":
+        st.header("Bending Analysis")
+        st.markdown("""
+        Analyze the cross-section under bending. Define strain distribution and compute internal forces.
+        """)
+        
+        try:
+            shape = build_shape()
+            concrete = get_concrete_by_class(st.session_state.concrete_selected)
+            reinforcement = build_reinforcement_from_layers()
+            cs = CrossSection(shape=shape, concrete=concrete.matmod, reinforcement=reinforcement)
+            
+            col1, col2 = st.columns([1, 2])
+            
+            with col1:
+                st.subheader("Strain State")
+                
+                kappa = st.number_input(
+                    "Curvature κ [1/mm]",
+                    -0.0001, 0.0001, 0.00002,
+                    0.000001, format="%.6f"
+                )
+                
+                eps_top = st.number_input(
+                    "Top strain ε_top [-]",
+                    -0.01, 0.01, -0.002,
+                    0.0001, format="%.6f"
+                )
+                
+                eps_bottom = eps_top + kappa * cs.h_total
+                
+                st.info(f"ε_bottom = {eps_bottom:.6f}")
+                
+                # Compute forces
+                N, M = cs.get_N_M(kappa, eps_bottom)
+                
+                st.markdown("---")
+                st.metric("Axial Force N", f"{N/1000:.1f} kN")
+                st.metric("Moment M", f"{M/1e6:.1f} kNm")
+            
+            with col2:
+                st.subheader("Visualization")
+                st.info("Strain/stress distribution plots coming soon")
+            
+            st.markdown("---")
+            st.info("**Next Step:** Go to **Summary** for complete documentation and export options.")
+                
+        except Exception as e:
+            st.warning(f"⚠️ Define cross-section first (Step 2). Error: {str(e)}")
+    
+    # ========================================
+    # STEP 4: SUMMARY
+    # ========================================
+    
+    elif current_step == "summary":
+        st.header("Complete Summary")
+        st.markdown("""
+        Full documentation of the designed cross-section with all properties and layer details.
+        """)
+        
+        try:
+            shape = build_shape()
+            concrete = get_concrete_by_class(st.session_state.concrete_selected)
+            reinforcement = build_reinforcement_from_layers()
+            cs = CrossSection(shape=shape, concrete=concrete.matmod, reinforcement=reinforcement)
+            
+            summary = cs.get_summary()
+            
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                st.subheader("Geometry")
+                for key, value in summary['geometry'].items():
+                    st.text(f"{key}: {value}")
+            
+            with col2:
+                st.subheader("Concrete")
+                st.text(f"Grade: {st.session_state.concrete_selected}")
+                st.text(f"f_ck: {concrete.f_ck:.1f} MPa")
+                st.text(f"f_cm: {concrete.f_cm:.1f} MPa")
+                st.text(f"E_cm: {concrete.E_cm:.0f} MPa")
+            
+            with col3:
+                st.subheader("Reinforcement")
+                for key, value in summary['reinforcement'].items():
+                    if isinstance(value, float):
+                        st.text(f"{key}: {value:.2f}")
+                    else:
+                        st.text(f"{key}: {value}")
+            
+            st.markdown("---")
+            
+            # Layer details
+            st.subheader("Layer Details")
+            layer_data = []
+            for layer in reinforcement.layers:
+                layer_data.append({
+                    'Name': layer.name,
+                    'Type': type(layer).__name__,
+                    'z [mm]': layer.z,
+                    'A_s [mm²]': f"{layer.A_s:.1f}"
+                })
+            
+            if layer_data:
+                df = pd.DataFrame(layer_data)
+                st.dataframe(df, use_container_width=True)
+            
+            st.markdown("---")
+            
+            # Export options (future)
+            st.subheader("Export Options")
+            st.info("Export to JSON/PDF coming in Phase 3")
+            
+            # Completion message
+            st.success(
+                "**Cross-section design complete**\n\n"
+                "Ready for:\n"
+                "- Moment-curvature analysis (Phase 3)\n"
+                "- Ultimate capacity calculation\n"
+                "- Design optimization"
+            )
+            
+        except Exception as e:
+            st.error(f"Error generating summary: {str(e)}")
+            st.info("Complete Steps 1-2 first: Select materials and define cross-section.")
 
-# ===========================
-# TAB 4: Summary
-# ===========================
-with tab4:
-    st.header("Complete Cross-Section Summary")
-    
-    summary = cs.get_summary()
-    
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        st.subheader("📐 Geometry")
-        for key, value in summary['geometry'].items():
-            st.text(f"{key}: {value}")
-    
-    with col2:
-        st.subheader("🔨 Concrete")
-        for key, value in summary['concrete'].items():
-            if isinstance(value, float):
-                st.text(f"{key}: {value:.1f} MPa")
-            else:
-                st.text(f"{key}: {value}")
-    
-    with col3:
-        st.subheader("🔩 Reinforcement")
-        for key, value in summary['reinforcement'].items():
-            if isinstance(value, float):
-                st.text(f"{key}: {value:.2f}")
-            else:
-                st.text(f"{key}: {value}")
-    
-    st.markdown("---")
-    st.subheader("📊 Combined Visualization")
-    
-    # Combined plot
-    fig = plt.figure(figsize=(18, 6))
-    gs = fig.add_gridspec(1, 3, width_ratios=[1, 1, 1])
-    
-    ax1 = fig.add_subplot(gs[0])
-    ax2 = fig.add_subplot(gs[1])
-    ax3 = fig.add_subplot(gs[2])
-    
-    cs.plot_cross_section(ax=ax1, show_dimensions=True, show_reinforcement=True)
-    cs.plot_strain_distribution(kappa, eps_bottom, ax=ax2)
-    cs.plot_stress_distribution(kappa, eps_bottom, ax=ax3)
-    
-    fig.suptitle(f'Complete Analysis (κ={kappa*1000:.3f} 1/m, N={N/1000:.1f} kN, M={M/1e6:.1f} kNm)', 
-                 fontsize=14, fontweight='bold')
-    
-    plt.tight_layout()
-    st.pyplot(fig)
-    plt.close()
+# ========================================
+# RUN APP
+# ========================================
 
-# Footer
-st.markdown("---")
-st.markdown("""
-**About this app:**
-- Built with the modern `bmcs_cross_section.cs_design` module
-- Uses EC2 material models for concrete and steel
-- Standard coordinate system: y=0 at bottom, positive upward
-- Strain distribution: ε(y) = ε_bottom - κ×y
-- Ready for Phase 3 integration with mkappa solver
-""")
+if __name__ == "__main__":
+    main()

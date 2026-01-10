@@ -13,16 +13,30 @@ from bmcs_cross_section.cs_components.component_base import ConcreteComponent
 from bmcs_cross_section.matmod.ec2_concrete import EC2Concrete
 
 
-def create_concrete_catalog() -> pd.DataFrame:
+def create_concrete_catalog(use_cache: bool = True) -> pd.DataFrame:
     """
     Create catalog of standard concrete grades according to EC2.
+    
+    Args:
+        use_cache: If True, use cached catalog (default). 
+                   If False, create fresh catalog.
     
     Strength classes from C12/15 to C90/105.
     Format: C(f_ck)/(f_ck,cube)
     
     Returns:
         DataFrame with all standard concrete grades
+        
+    Note:
+        By default, this function uses cached catalogs stored in JSON format.
+        The catalog is created once and loaded from cache on subsequent calls.
+        Use use_cache=False to force recreation (useful for development).
     """
+    if use_cache:
+        from bmcs_cross_section.cs_components.catalog_manager import get_catalog_manager
+        return get_catalog_manager().get_concrete_catalog()
+    
+    # Original creation logic (used when cache is bypassed or first time)
     catalog = []
     
     # EC2 Table 3.1: Concrete strength classes
@@ -77,27 +91,14 @@ def get_concrete_by_class(strength_class: str) -> Optional[ConcreteComponent]:
         
     Returns:
         ConcreteComponent or None if not found
+        
+    Note:
+        Uses cached catalog for performance. First call creates and caches
+        the catalog, subsequent calls load from JSON cache.
     """
-    catalog = create_concrete_catalog()
-    result = catalog[catalog['strength_class'] == strength_class]
-    
-    if result.empty:
-        return None
-    
-    row = result.iloc[0]
-    matmod = EC2Concrete(f_cm=row['f_cm'])
-    
-    return ConcreteComponent(
-        product_id=row['product_id'],
-        name=row['name'],
-        strength_class=row['strength_class'],
-        f_ck=row['f_ck'],
-        f_cm=row['f_cm'],
-        E_cm=row['E_cm'],
-        gamma_c=row['gamma_c'],
-        alpha_cc=row['alpha_cc'],
-        matmod=matmod,
-    )
+    # Use catalog manager for cached access
+    from bmcs_cross_section.cs_components.catalog_manager import get_catalog_manager
+    return get_catalog_manager().get_concrete_by_class(strength_class)
 
 
 def get_concrete_by_fck(f_ck_min: float) -> pd.DataFrame:

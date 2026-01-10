@@ -47,7 +47,7 @@ class TextileReinforcementComponent(ReinforcementComponent):
     
     def get_design_stress_strain(self, eps: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
         """
-        Linear elastic to failure (typical for textile).
+        Linear elastic to failure (typical for textile, design values).
         """
         f_td = self.f_td
         eps_ud = self.eps_ud
@@ -58,6 +58,22 @@ class TextileReinforcementComponent(ReinforcementComponent):
         
         # Limit to ultimate strain
         sig = np.where(np.abs(eps) > eps_ud, 0, sig)
+        
+        return sig
+    
+    def get_characteristic_stress_strain(self, eps: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
+        """
+        Linear elastic to failure (typical for textile, characteristic values).
+        """
+        f_tk = self.f_tk
+        eps_uk = self.eps_uk
+        
+        # Linear elastic
+        sig = np.minimum(self.E * np.abs(eps), f_tk)
+        sig = np.sign(eps) * sig
+        
+        # Limit to ultimate strain
+        sig = np.where(np.abs(eps) > eps_uk, 0, sig)
         
         return sig
     
@@ -72,15 +88,29 @@ class TextileReinforcementComponent(ReinforcementComponent):
         return base_dict
 
 
-def create_textile_catalog() -> pd.DataFrame:
+def create_textile_catalog(use_cache: bool = True) -> pd.DataFrame:
     """
     Create catalog of Solidian textile products.
+    
+    Args:
+        use_cache: If True, use cached catalog (default). 
+                   If False, create fresh catalog.
     
     Common products:
     - Carbon grids (high strength, high stiffness)
     - Glass grids (lower cost)
     - Basalt grids (corrosion resistant)
+    
+    Note:
+        By default, this function uses cached catalogs stored in JSON format.
+        The catalog is created once and loaded from cache on subsequent calls.
+        Use use_cache=False to force recreation (useful for development).
     """
+    if use_cache:
+        from bmcs_cross_section.cs_components.catalog_manager import get_catalog_manager
+        return get_catalog_manager().get_textile_catalog()
+    
+    # Original creation logic (used when cache is bypassed or first time)
     catalog = []
     
     # Carbon textile properties

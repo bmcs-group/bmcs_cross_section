@@ -13,6 +13,9 @@ Architecture:
   
 - **Models (matmod)**: Mathematical stress-strain relationships
   for material behavior simulation.
+  
+- **Caching (catalog_manager)**: Persistent JSON-based catalog storage
+  with lazy loading for performance optimization.
 
 Key Features:
 -------------
@@ -21,6 +24,7 @@ Key Features:
 - Safety: Built-in characteristic → design value conversion
 - Query interface: Pandas-based catalog filtering
 - Integration: Automatic matmod creation for each product
+- Caching: JSON-based persistent storage with lazy loading
 
 Component Types:
 ---------------
@@ -30,31 +34,29 @@ Component Types:
 - TextileReinforcementComponent: Textile grids (Solidian)
 - ConcreteComponent: Concrete grades (EC2 strength classes)
 
-Usage Example:
--------------
+Usage Example (Cached Catalogs):
+--------------------------------
     >>> from bmcs_cross_section.cs_components import (
     ...     create_steel_rebar_catalog,
-    ...     get_concrete_by_class
+    ...     get_concrete_by_class,
+    ...     get_catalog_manager
     ... )
     >>> 
-    >>> # Get steel catalog
+    >>> # Get cached steel catalog (loaded from JSON if available)
     >>> steel_catalog = create_steel_rebar_catalog()
     >>> 
-    >>> # Find 20mm B500B rebar
-    >>> rebar = steel_catalog[
-    ...     steel_catalog['product_id'] == 'REBAR-B500B-D20'
-    ... ].iloc[0]
+    >>> # Or use catalog manager directly for more control
+    >>> manager = get_catalog_manager()
+    >>> steel_catalog = manager.get_steel_catalog()  # Cached
     >>> 
-    >>> # Get concrete component
+    >>> # Get concrete component (also cached)
     >>> concrete = get_concrete_by_class("C30/37")
     >>> 
-    >>> # Use in cross-section design
-    >>> from bmcs_cross_section.cs_design import ReinforcementLayer
-    >>> layer = ReinforcementLayer(
-    ...     z=50, 
-    ...     A_s=rebar['area']*4,
-    ...     material=rebar['matmod']
-    ... )
+    >>> # Force refresh if needed
+    >>> steel_catalog = manager.get_steel_catalog(force_refresh=True)
+    >>> 
+    >>> # Clear all caches
+    >>> manager.clear_all_caches()
 
 Design vs Characteristic Values:
 -------------------------------
@@ -69,6 +71,9 @@ This ensures consistent safety factor application across all designs.
 
 # Base classes
 from .component_base import ReinforcementComponent, ConcreteComponent
+
+# Catalog manager (caching system)
+from .catalog_manager import CatalogManager, get_catalog_manager
 
 # Reinforcement components
 from .steel_rebars import SteelRebarComponent, create_steel_rebar_catalog
@@ -102,6 +107,10 @@ __all__ = [
     # Base classes
     'ReinforcementComponent',
     'ConcreteComponent',
+    
+    # Catalog manager (caching)
+    'CatalogManager',
+    'get_catalog_manager',
     
     # Reinforcement components
     'SteelRebarComponent',
