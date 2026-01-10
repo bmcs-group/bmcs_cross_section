@@ -1,0 +1,20 @@
+{
+    "python.analysis.typeCheckingMode": "basic",
+    "python.analysis.diagnosticSeverityOverrides": {
+        "reportGeneralTypeIssues": "none",
+        "reportOptionalIterable": "none",
+        "reportOptionalMemberAccess": "none",
+        "reportOptionalSubscript": "none",
+        "reportOptionalCall": "none",
+        "reportOptionalOperand": "none",
+        "reportOptionalContextManager": "none",
+        "reportPrivateImportUsage": "none",
+        "reportUnboundVariable": "warning",
+        "reportAttributeAccessIssue": "none"
+    },
+    "python.analysis.autoImportCompletions": true,
+    "python.analysis.extraPaths": [
+        "${workspaceFolder}",
+        "/home/rch/Coding/bmcs_utils"
+    ]
+}
