@@ -1,30 +1,30 @@
 {
+  "concrete": {
+    "created": "2026-01-11T14:11:23.809516",
+    "last_accessed": "2026-01-12T13:58:51.920230",
+    "count": 14,
+    "hash": "d2a4eb39ee2cc97b8da5b0023a600b7c",
+    "cache_file": "/home/rch/Coding/bmcs_cross_section/bmcs_cross_section/cs_components/.catalog_cache/concrete.json"
+  },
+  "steel_rebars": {
+    "created": "2026-01-11T14:11:24.998793",
+    "last_accessed": "2026-01-12T13:58:54.385272",
+    "count": 33,
+    "hash": "73fb1bae96ab90c1bb81e350ef367100",
+    "cache_file": "/home/rch/Coding/bmcs_cross_section/bmcs_cross_section/cs_components/.catalog_cache/steel_rebars.json"
+  },
   "carbon_bars": {
-    "created": "2026-01-10T15:44:31.107034",
-    "last_accessed": "2026-01-10T17:23:36.926640",
+    "created": "2026-01-11T14:11:25.858030",
+    "last_accessed": "2026-01-12T13:58:55.957861",
     "count": 10,
     "hash": "e290d4d6be5fa13b86c10efcab9e3567",
     "cache_file": "/home/rch/Coding/bmcs_cross_section/bmcs_cross_section/cs_components/.catalog_cache/carbon_bars.json"
   },
   "textile_products": {
-    "created": "2026-01-10T15:44:31.116148",
-    "last_accessed": "2026-01-10T17:23:36.939102",
+    "created": "2026-01-11T14:11:26.164827",
+    "last_accessed": "2026-01-12T13:58:57.323502",
     "count": 5,
     "hash": "d1d40419d652917a241853db576d17dd",
     "cache_file": "/home/rch/Coding/bmcs_cross_section/bmcs_cross_section/cs_components/.catalog_cache/textile_products.json"
-  },
-  "steel_rebars": {
-    "created": "2026-01-10T15:44:34.395031",
-    "last_accessed": "2026-01-10T17:23:36.925353",
-    "count": 33,
-    "hash": "2b24b2e1d05d1f0e7481d8d2eaa0ae33",
-    "cache_file": "/home/rch/Coding/bmcs_cross_section/bmcs_cross_section/cs_components/.catalog_cache/steel_rebars.json"
-  },
-  "concrete": {
-    "created": "2026-01-10T15:44:34.408290",
-    "last_accessed": "2026-01-10T17:53:39.018715",
-    "count": 14,
-    "hash": "d2a4eb39ee2cc97b8da5b0023a600b7c",
-    "cache_file": "/home/rch/Coding/bmcs_cross_section/bmcs_cross_section/cs_components/.catalog_cache/concrete.json"
   }
 }

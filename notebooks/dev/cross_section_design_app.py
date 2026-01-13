@@ -28,7 +28,8 @@ from bmcs_cross_section.cs_components import (
     get_concrete_by_class,
     SteelRebarComponent,
     CarbonBarComponent,
-    TextileReinforcementComponent
+    TextileReinforcementComponent,
+    ConcreteComponent
 )
 
 from bmcs_cross_section.matmod import create_steel, create_carbon
@@ -277,7 +278,7 @@ def main():
     <style>
         /* Style the main header area */
         header[data-testid="stHeader"] {
-            background-color: #1f77b4;
+            background: linear-gradient(135deg, #1f77b4 0%, #1565c0 100%);
             padding: 0.5rem 1rem;
         }
         
@@ -362,18 +363,20 @@ def main():
             object-fit: contain !important;
         }
         
-        /* Style menu buttons */
+        /* Style menu buttons - match the selected div exactly */
         section[data-testid="stSidebar"] button {
             margin: 0.25rem 0 !important;
             padding: 0.75rem 1rem !important;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif !important;
             font-size: 1.3rem !important;
-            font-weight: 700 !important;
+            font-weight: 600 !important;
             border: none !important;
             border-radius: 0 !important;
             background: transparent !important;
             color: #333 !important;
-            transition: background 0.2s ease !important;
+            transition: background 0.2s ease, color 0.2s ease !important;
             text-align: center !important;
+            line-height: 1.5 !important;
         }
         
         section[data-testid="stSidebar"] button:hover {
@@ -402,28 +405,35 @@ def main():
     # ========================================
     
     with st.sidebar:
-        # Workflow menu using buttons
+        # Workflow menu using buttons with matching font styling
         menu_items = ["Components", "Cross-Section", "Bending Analysis", "Summary"]
         
         for item in menu_items:
             is_selected = st.session_state.workflow_step == item
+            
             if is_selected:
+                # Selected state - gradient background
                 st.markdown(f"""
                 <div style="background: linear-gradient(135deg, #1f77b4 0%, #1565c0 100%);
                             color: white;
                             padding: 0.75rem 1rem;
                             margin: 0.25rem 0;
+                            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
                             font-size: 1.3rem;
-                            font-weight: 700;
+                            font-weight: 600;
+                            line-height: 1.5;
                             box-shadow: 0 2px 8px rgba(31, 119, 180, 0.3);
                             cursor: default;
-                            text-align: center;">
+                            text-align: center;
+                            border-radius: 0;">
                     {item}
                 </div>
                 """, unsafe_allow_html=True)
             else:
+                # Unselected state - clickable button
                 if st.button(item, key=f"menu_{item}", use_container_width=True):
                     st.session_state.workflow_step = item
+                    st.rerun()
                     st.rerun()
         
         workflow_step = st.session_state.workflow_step
@@ -459,71 +469,315 @@ def main():
         st.header("Component Catalogs")
         st.markdown("""
         Browse available materials and products. View specifications, properties, and stress-strain curves.
-        Select materials in the **Cross-Section** step.
         """)
         
-        # Catalog browsers as cards
-        col1, col2, col3 = st.columns(3)
+        # Horizontal tabs for each component type
+        tab_concrete, tab_steel, tab_carbon, tab_textile = st.tabs([
+            "Concrete", "Steel Rebars", "Carbon Bars", "Textile Products"
+        ])
         
-        with col1:
-            st.subheader("Concrete")
-            st.markdown("Strength grades according to EC2")
-            if st.button("Browse Concrete Catalog", use_container_width=True, type="primary"):
-                browse_concrete_catalog()
+        # Get catalog manager
+        manager = get_catalog_manager_cached()
+        
+        # ========== CONCRETE TAB ==========
+        with tab_concrete:
+            catalog = manager.get_concrete_catalog()
             
-            st.caption("Available grades: C12/15 to C90/105")
-        
-        with col2:
-            st.subheader("Steel Rebars")
-            st.markdown("Reinforcement bars (B500 series)")
-            if st.button("Browse Steel Catalog", use_container_width=True, type="primary"):
-                browse_steel_catalog()
+            # Format display columns
+            display_cols = ['product_id', 'strength_class', 'f_ck', 'f_cm', 'f_cd', 'E_cm']
+            display_df = catalog[display_cols].copy()
             
-            st.caption("Diameters: 6-40 mm")
-        
-        with col3:
-            st.subheader("Carbon Bars")
-            st.markdown("CFRP bars (COMBAR)")
-            if st.button("Browse Carbon Catalog", use_container_width=True, type="primary"):
-                browse_carbon_catalog()
+            # Find C25/30 as default
+            default_idx = 0
+            if 'strength_class' in catalog.columns:
+                c25_matches = catalog[catalog['strength_class'] == 'C25/30']
+                if not c25_matches.empty:
+                    default_idx = catalog.index.get_loc(c25_matches.index[0])
             
-            st.caption("Diameters: 6-32 mm")
-        
-        st.markdown("---")
-        
-        # Quick preview of selected materials
-        st.subheader("Currently Selected Materials")
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.markdown("**Concrete:**")
-            concrete = get_concrete_by_class(st.session_state.concrete_selected)
-            st.info(f"""
-            Grade: {st.session_state.concrete_selected}  
-            f_ck = {concrete.f_ck:.1f} MPa  
-            f_cm = {concrete.f_cm:.1f} MPa  
-            E_cm = {concrete.E_cm:.0f} MPa
-            """)
-        
-        with col2:
-            st.markdown("**Reinforcement Layers:**")
-            if len(st.session_state.layers) == 0:
-                st.info("No layers added yet.\n\nGo to **Cross-Section** step to add layers.")
-            else:
-                layer_summary = []
-                for layer in st.session_state.layers:
-                    if layer['type'] == 'Bar':
-                        layer_summary.append(f"- {layer['name']}: {layer['count']}×Ø{layer['diameter']} {layer['material']}")
-                    elif layer['type'] == 'Layer':
-                        layer_summary.append(f"- {layer['name']}: Textile {layer['roving_tex']}tex")
-                    else:
-                        layer_summary.append(f"- {layer['name']}: A_s={layer['A_s']:.0f} mm²")
+            # Table with selection
+            if 'concrete_selected_idx' not in st.session_state:
+                st.session_state.concrete_selected_idx = default_idx
+            
+            event = st.dataframe(
+                display_df,
+                height=200,
+                hide_index=True,
+                on_select="rerun",
+                selection_mode="single-row",
+                use_container_width=True
+            )
+            
+            # Update selection
+            if event.selection.rows:
+                st.session_state.concrete_selected_idx = event.selection.rows[0]
+            
+            selected_idx = min(st.session_state.concrete_selected_idx, len(catalog) - 1)
+            selected_row = catalog.iloc[selected_idx]
+            
+            # Create component
+            from bmcs_cross_section.matmod.ec2_concrete import EC2Concrete
+            concrete_matmod = EC2Concrete(f_cm=float(selected_row['f_cm']))
+            component = ConcreteComponent(
+                product_id=selected_row['product_id'],
+                name=selected_row.get('name', selected_row['strength_class']),
+                strength_class=selected_row['strength_class'],
+                f_ck=selected_row['f_ck'],
+                f_cm=selected_row['f_cm'],
+                E_cm=selected_row['E_cm'],
+                matmod=concrete_matmod,
+            )
+            
+            # Two columns: parameters (left) and plot (right)
+            col_params, col_plot = st.columns([1.2, 1])
+            
+            with col_params:
+                st.markdown("#### Component Details")
+                st.markdown(f"**{component.name}** ({component.product_id})")
                 
-                st.info("\n".join(layer_summary))
+                st.markdown("**Strength Properties**")
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.metric("f_ck", f"{component.f_ck} MPa", help="Characteristic strength")
+                    st.metric("f_cm", f"{component.f_cm} MPa", help="Mean strength")
+                with col2:
+                    st.metric("f_cd", f"{component.f_cd:.1f} MPa", help="Design strength")
+                    st.metric("γ_c", f"{component.gamma_c:.2f}", help="Safety factor")
+                
+                st.markdown("**Deformation Properties**")
+                st.metric("E_cm", f"{component.E_cm} MPa", help="Elastic modulus")
+            
+            with col_plot:
+                st.markdown("#### Stress-Strain Curve")
+                fig, ax = plt.subplots(figsize=(6, 4.5))
+                component.plot_stress_strain(ax=ax, show_limits=True, color='blue', alpha_fill=0.2)
+                ax.grid(True, alpha=0.3)
+                st.pyplot(fig)
+                plt.close()
         
-        st.markdown("---")
-        st.info("**Next Step:** Go to **Cross-Section** to define geometry and reinforcement layout.")
+        # ========== STEEL REBARS TAB ==========
+        with tab_steel:
+            catalog = manager.get_steel_catalog()
+            
+            # Format display columns
+            display_cols = ['product_id', 'name', 'nominal_diameter', 'area', 'f_tk', 'f_td', 'E']
+            display_df = catalog[display_cols].copy()
+            
+            # Table with selection
+            if 'steel_selected_idx' not in st.session_state:
+                st.session_state.steel_selected_idx = 0
+            
+            event = st.dataframe(
+                display_df,
+                height=200,
+                hide_index=True,
+                on_select="rerun",
+                selection_mode="single-row",
+                use_container_width=True
+            )
+            
+            if event.selection.rows:
+                st.session_state.steel_selected_idx = event.selection.rows[0]
+            
+            selected_idx = min(st.session_state.steel_selected_idx, len(catalog) - 1)
+            selected_row = catalog.iloc[selected_idx]
+            
+            # Extract grade
+            if 'B500A' in selected_row['name']:
+                grade = 'B500A'
+            elif 'B500B' in selected_row['name']:
+                grade = 'B500B'
+            elif 'B500C' in selected_row['name']:
+                grade = 'B500C'
+            else:
+                grade = 'B500B'
+            
+            component = SteelRebarComponent(
+                nominal_diameter=selected_row['nominal_diameter'],
+                grade=grade
+            )
+            
+            # Two columns: parameters (left) and plot (right)
+            col_params, col_plot = st.columns([1.2, 1])
+            
+            with col_params:
+                st.markdown("#### Component Details")
+                st.markdown(f"**{component.name}** ({component.product_id})")
+                
+                st.markdown("**Geometric Properties**")
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.metric("Diameter", f"{component.nominal_diameter} mm")
+                with col2:
+                    st.metric("Area", f"{component.area:.2f} mm²")
+                
+                st.markdown("**Characteristic Properties**")
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.metric("f_tk", f"{component.f_tk:.0f} MPa", help="Tensile strength")
+                    st.metric("E", f"{component.E:.0f} MPa", help="Elastic modulus")
+                with col2:
+                    st.metric("ε_uk", f"{component.eps_uk:.4f}", help="Ultimate strain")
+                    st.metric("γ_s", f"{component.gamma_s:.2f}", help="Safety factor")
+                
+                st.markdown("**Design Properties**")
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.metric("f_td", f"{component.f_td:.1f} MPa", help="Design strength")
+                with col2:
+                    st.metric("ε_ud", f"{component.eps_ud:.4f}", help="Design strain")
+            
+            with col_plot:
+                st.markdown("#### Stress-Strain Curve")
+                fig, ax = plt.subplots(figsize=(6, 4.5))
+                component.plot_stress_strain(ax=ax, show_limits=True, color='darkred', alpha_fill=0.2)
+                ax.grid(True, alpha=0.3)
+                st.pyplot(fig)
+                plt.close()
+        
+        # ========== CARBON BARS TAB ==========
+        with tab_carbon:
+            catalog = manager.get_carbon_catalog()
+            
+            # Format display columns
+            display_cols = ['product_id', 'name', 'nominal_diameter', 'area', 'f_tk', 'f_td', 'E']
+            display_df = catalog[display_cols].copy()
+            
+            # Table with selection
+            if 'carbon_selected_idx' not in st.session_state:
+                st.session_state.carbon_selected_idx = 0
+            
+            event = st.dataframe(
+                display_df,
+                height=200,
+                hide_index=True,
+                on_select="rerun",
+                selection_mode="single-row",
+                use_container_width=True
+            )
+            
+            if event.selection.rows:
+                st.session_state.carbon_selected_idx = event.selection.rows[0]
+            
+            selected_idx = min(st.session_state.carbon_selected_idx, len(catalog) - 1)
+            selected_row = catalog.iloc[selected_idx]
+            
+            component = CarbonBarComponent(
+                nominal_diameter=selected_row['nominal_diameter']
+            )
+            
+            # Two columns: parameters (left) and plot (right)
+            col_params, col_plot = st.columns([1.2, 1])
+            
+            with col_params:
+                st.markdown("#### Component Details")
+                st.markdown(f"**{component.name}** ({component.product_id})")
+                
+                st.markdown("**Geometric Properties**")
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.metric("Diameter", f"{component.nominal_diameter} mm")
+                with col2:
+                    st.metric("Area", f"{component.area:.2f} mm²")
+                
+                st.markdown("**Characteristic Properties**")
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.metric("f_tk", f"{component.f_tk:.0f} MPa", help="Tensile strength")
+                    st.metric("E", f"{component.E:.0f} MPa", help="Elastic modulus")
+                with col2:
+                    st.metric("ε_uk", f"{component.eps_uk:.4f}", help="Ultimate strain")
+                    st.metric("γ_s", f"{component.gamma_s:.2f}", help="Safety factor")
+                
+                st.markdown("**Design Properties**")
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.metric("f_td", f"{component.f_td:.1f} MPa", help="Design strength")
+                with col2:
+                    st.metric("ε_ud", f"{component.eps_ud:.4f}", help="Design strain")
+            
+            with col_plot:
+                st.markdown("#### Stress-Strain Curve")
+                fig, ax = plt.subplots(figsize=(6, 4.5))
+                component.plot_stress_strain(ax=ax, show_limits=True, color='darkred', alpha_fill=0.2)
+                ax.grid(True, alpha=0.3)
+                st.pyplot(fig)
+                plt.close()
+        
+        # ========== TEXTILE PRODUCTS TAB ==========
+        with tab_textile:
+            catalog = manager.get_textile_catalog()
+            
+            # Format display columns
+            display_cols = ['product_id', 'name', 'material_type', 'area_per_width', 'grid_spacing', 'f_tk', 'E']
+            display_df = catalog[display_cols].copy()
+            
+            # Table with selection
+            if 'textile_selected_idx' not in st.session_state:
+                st.session_state.textile_selected_idx = 0
+            
+            event = st.dataframe(
+                display_df,
+                height=200,
+                hide_index=True,
+                on_select="rerun",
+                selection_mode="single-row",
+                use_container_width=True
+            )
+            
+            if event.selection.rows:
+                st.session_state.textile_selected_idx = event.selection.rows[0]
+            
+            selected_idx = min(st.session_state.textile_selected_idx, len(catalog) - 1)
+            selected_row = catalog.iloc[selected_idx]
+            
+            component = TextileReinforcementComponent(
+                product_id=selected_row['product_id'],
+                name=selected_row['name'],
+                material_type=selected_row['material_type'],
+                roving_tex=selected_row['roving_tex'],
+                spacing=selected_row['grid_spacing'],
+                A_roving=selected_row.get('A_roving', selected_row['roving_tex'] / 1670.0),
+                f_tk=selected_row['f_tk'],
+                E=selected_row['E']
+            )
+            
+            # Two columns: parameters (left) and plot (right)
+            col_params, col_plot = st.columns([1.2, 1])
+            
+            with col_params:
+                st.markdown("#### Component Details")
+                st.markdown(f"**{component.name}** ({component.product_id})")
+                
+                st.markdown("**Geometric Properties**")
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.metric("Area/Width", f"{component.area_per_width:.1f} mm²/m")
+                with col2:
+                    st.metric("Grid Spacing", f"{component.grid_spacing} mm")
+                
+                st.markdown("**Characteristic Properties**")
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.metric("f_tk", f"{component.f_tk:.0f} MPa", help="Tensile strength")
+                    st.metric("E", f"{component.E:.0f} MPa", help="Elastic modulus")
+                with col2:
+                    st.metric("ε_uk", f"{component.eps_uk:.4f}", help="Ultimate strain")
+                    st.metric("γ_s", f"{component.gamma_s:.2f}", help="Safety factor")
+                
+                st.markdown("**Design Properties**")
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.metric("f_td", f"{component.f_td:.1f} MPa", help="Design strength")
+                with col2:
+                    st.metric("ε_ud", f"{component.eps_ud:.4f}", help="Design strain")
+            
+            with col_plot:
+                st.markdown("#### Stress-Strain Curve")
+                fig, ax = plt.subplots(figsize=(6, 4.5))
+                component.plot_stress_strain(ax=ax, show_limits=True, color='darkred', alpha_fill=0.2)
+                ax.grid(True, alpha=0.3)
+                st.pyplot(fig)
+                plt.close()
     
     # ========================================
     # STEP 2: CROSS-SECTION (Geometry + Reinforcement)

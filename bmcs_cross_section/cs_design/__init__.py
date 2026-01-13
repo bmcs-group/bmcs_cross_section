@@ -35,6 +35,9 @@ from .reinforcement import (
 # Cross-section assembly
 from .cross_section import CrossSection
 
+# Stress-strain profile analysis
+from .cs_stress_strain_profile import StressStrainProfile, plot_stress_strain_profile
+
 __all__ = [
     # Shapes
     'RectangularShape',
@@ -50,6 +53,9 @@ __all__ = [
     'create_distributed_reinforcement',
     # Cross-section assembly
     'CrossSection',
+    # Stress-strain analysis
+    'StressStrainProfile',
+    'plot_stress_strain_profile',
     # Deprecated (use AreaReinforcement instead)
     'ReinforcementLayer',
 ]

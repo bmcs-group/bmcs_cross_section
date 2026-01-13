@@ -113,7 +113,7 @@ class ReinforcementLayer(BMCSModel):
             Force [N]
         """
         sig = self.get_sig(eps)
-        return self.A_s * sig
+        return float(self.A_s * sig)
     
     def get_moment_arm(self, y_ref: float = 0.0) -> float:
         """
@@ -505,7 +505,7 @@ class BarReinforcement(BMCSModel):
     def get_force(self, eps: float) -> float:
         """Get force: F = A_s × σ(ε)"""
         sig = self.get_sig(eps)
-        return self.A_s * sig
+        return float(self.A_s * sig)
     
     def get_moment(self, eps: float, y_ref: float = 0.0) -> float:
         """Get moment: M = F × (z - y_ref)"""
@@ -602,7 +602,7 @@ class LayerReinforcement(BMCSModel):
     def get_force(self, eps: float) -> float:
         """Get force: F = A_s × σ(ε)"""
         sig = self.get_sig(eps)
-        return self.A_s * sig
+        return float(self.A_s * sig)
     
     def get_moment(self, eps: float, y_ref: float = 0.0) -> float:
         """Get moment: M = F × (z - y_ref)"""
@@ -669,7 +669,7 @@ class AreaReinforcement(BMCSModel):
     def get_force(self, eps: float) -> float:
         """Get force: F = A_s × σ(ε)"""
         sig = self.get_sig(eps)
-        return self.A_s * sig
+        return float(self.A_s * sig)
     
     def get_moment(self, eps: float, y_ref: float = 0.0) -> float:
         """Get moment: M = F × (z - y_ref)"""

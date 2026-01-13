@@ -1,6 +1,6 @@
 {
   "catalog_name": "steel_rebars",
-  "created": "2026-01-10T15:44:34.395031",
+  "created": "2026-01-11T14:11:24.998793",
   "records": [
     {
       "product_id": "REBAR-B500A-D6",
@@ -14,7 +14,8 @@
       "f_td": 434.7826086956522,
       "E": 200000.0,
       "eps_uk": 0.025,
-      "gamma_s": 1.15
+      "gamma_s": 1.15,
+      "grade": "B500A"
     },
     {
       "product_id": "REBAR-B500A-D8",
@@ -28,7 +29,8 @@
       "f_td": 434.7826086956522,
       "E": 200000.0,
       "eps_uk": 0.025,
-      "gamma_s": 1.15
+      "gamma_s": 1.15,
+      "grade": "B500A"
     },
     {
       "product_id": "REBAR-B500A-D10",
@@ -42,7 +44,8 @@
       "f_td": 434.7826086956522,
       "E": 200000.0,
       "eps_uk": 0.025,
-      "gamma_s": 1.15
+      "gamma_s": 1.15,
+      "grade": "B500A"
     },
     {
       "product_id": "REBAR-B500A-D12",
@@ -56,7 +59,8 @@
       "f_td": 434.7826086956522,
       "E": 200000.0,
       "eps_uk": 0.025,
-      "gamma_s": 1.15
+      "gamma_s": 1.15,
+      "grade": "B500A"
     },
     {
       "product_id": "REBAR-B500A-D14",
@@ -70,7 +74,8 @@
       "f_td": 434.7826086956522,
       "E": 200000.0,
       "eps_uk": 0.025,
-      "gamma_s": 1.15
+      "gamma_s": 1.15,
+      "grade": "B500A"
     },
     {
       "product_id": "REBAR-B500A-D16",
@@ -84,7 +89,8 @@
       "f_td": 434.7826086956522,
       "E": 200000.0,
       "eps_uk": 0.025,
-      "gamma_s": 1.15
+      "gamma_s": 1.15,
+      "grade": "B500A"
     },
     {
       "product_id": "REBAR-B500A-D20",
@@ -98,7 +104,8 @@
       "f_td": 434.7826086956522,
       "E": 200000.0,
       "eps_uk": 0.025,
-      "gamma_s": 1.15
+      "gamma_s": 1.15,
+      "grade": "B500A"
     },
     {
       "product_id": "REBAR-B500A-D25",
@@ -112,7 +119,8 @@
       "f_td": 434.7826086956522,
       "E": 200000.0,
       "eps_uk": 0.025,
-      "gamma_s": 1.15
+      "gamma_s": 1.15,
+      "grade": "B500A"
     },
     {
       "product_id": "REBAR-B500A-D28",
@@ -126,7 +134,8 @@
       "f_td": 434.7826086956522,
       "E": 200000.0,
       "eps_uk": 0.025,
-      "gamma_s": 1.15
+      "gamma_s": 1.15,
+      "grade": "B500A"
     },
     {
       "product_id": "REBAR-B500A-D32",
@@ -140,7 +149,8 @@
       "f_td": 434.7826086956522,
       "E": 200000.0,
       "eps_uk": 0.025,
-      "gamma_s": 1.15
+      "gamma_s": 1.15,
+      "grade": "B500A"
     },
     {
       "product_id": "REBAR-B500A-D40",
@@ -154,7 +164,8 @@
       "f_td": 434.7826086956522,
       "E": 200000.0,
       "eps_uk": 0.025,
-      "gamma_s": 1.15
+      "gamma_s": 1.15,
+      "grade": "B500A"
     },
     {
       "product_id": "REBAR-B500B-D6",
@@ -168,7 +179,8 @@
       "f_td": 434.7826086956522,
       "E": 200000.0,
       "eps_uk": 0.05,
-      "gamma_s": 1.15
+      "gamma_s": 1.15,
+      "grade": "B500B"
     },
     {
       "product_id": "REBAR-B500B-D8",
@@ -182,7 +194,8 @@
       "f_td": 434.7826086956522,
       "E": 200000.0,
       "eps_uk": 0.05,
-      "gamma_s": 1.15
+      "gamma_s": 1.15,
+      "grade": "B500B"
     },
     {
       "product_id": "REBAR-B500B-D10",
@@ -196,7 +209,8 @@
       "f_td": 434.7826086956522,
       "E": 200000.0,
       "eps_uk": 0.05,
-      "gamma_s": 1.15
+      "gamma_s": 1.15,
+      "grade": "B500B"
     },
     {
       "product_id": "REBAR-B500B-D12",
@@ -210,7 +224,8 @@
       "f_td": 434.7826086956522,
       "E": 200000.0,
       "eps_uk": 0.05,
-      "gamma_s": 1.15
+      "gamma_s": 1.15,
+      "grade": "B500B"
     },
     {
       "product_id": "REBAR-B500B-D14",
@@ -224,7 +239,8 @@
       "f_td": 434.7826086956522,
       "E": 200000.0,
       "eps_uk": 0.05,
-      "gamma_s": 1.15
+      "gamma_s": 1.15,
+      "grade": "B500B"
     },
     {
       "product_id": "REBAR-B500B-D16",
@@ -238,7 +254,8 @@
       "f_td": 434.7826086956522,
       "E": 200000.0,
       "eps_uk": 0.05,
-      "gamma_s": 1.15
+      "gamma_s": 1.15,
+      "grade": "B500B"
     },
     {
       "product_id": "REBAR-B500B-D20",
@@ -252,7 +269,8 @@
       "f_td": 434.7826086956522,
       "E": 200000.0,
       "eps_uk": 0.05,
-      "gamma_s": 1.15
+      "gamma_s": 1.15,
+      "grade": "B500B"
     },
     {
       "product_id": "REBAR-B500B-D25",
@@ -266,7 +284,8 @@
       "f_td": 434.7826086956522,
       "E": 200000.0,
       "eps_uk": 0.05,
-      "gamma_s": 1.15
+      "gamma_s": 1.15,
+      "grade": "B500B"
     },
     {
       "product_id": "REBAR-B500B-D28",
@@ -280,7 +299,8 @@
       "f_td": 434.7826086956522,
       "E": 200000.0,
       "eps_uk": 0.05,
-      "gamma_s": 1.15
+      "gamma_s": 1.15,
+      "grade": "B500B"
     },
     {
       "product_id": "REBAR-B500B-D32",
@@ -294,7 +314,8 @@
       "f_td": 434.7826086956522,
       "E": 200000.0,
       "eps_uk": 0.05,
-      "gamma_s": 1.15
+      "gamma_s": 1.15,
+      "grade": "B500B"
     },
     {
       "product_id": "REBAR-B500B-D40",
@@ -308,7 +329,8 @@
       "f_td": 434.7826086956522,
       "E": 200000.0,
       "eps_uk": 0.05,
-      "gamma_s": 1.15
+      "gamma_s": 1.15,
+      "grade": "B500B"
     },
     {
       "product_id": "REBAR-B500C-D6",
@@ -322,7 +344,8 @@
       "f_td": 434.7826086956522,
       "E": 200000.0,
       "eps_uk": 0.075,
-      "gamma_s": 1.15
+      "gamma_s": 1.15,
+      "grade": "B500C"
     },
     {
       "product_id": "REBAR-B500C-D8",
@@ -336,7 +359,8 @@
       "f_td": 434.7826086956522,
       "E": 200000.0,
       "eps_uk": 0.075,
-      "gamma_s": 1.15
+      "gamma_s": 1.15,
+      "grade": "B500C"
     },
     {
       "product_id": "REBAR-B500C-D10",
@@ -350,7 +374,8 @@
       "f_td": 434.7826086956522,
       "E": 200000.0,
       "eps_uk": 0.075,
-      "gamma_s": 1.15
+      "gamma_s": 1.15,
+      "grade": "B500C"
     },
     {
       "product_id": "REBAR-B500C-D12",
@@ -364,7 +389,8 @@
       "f_td": 434.7826086956522,
       "E": 200000.0,
       "eps_uk": 0.075,
-      "gamma_s": 1.15
+      "gamma_s": 1.15,
+      "grade": "B500C"
     },
     {
       "product_id": "REBAR-B500C-D14",
@@ -378,7 +404,8 @@
       "f_td": 434.7826086956522,
       "E": 200000.0,
       "eps_uk": 0.075,
-      "gamma_s": 1.15
+      "gamma_s": 1.15,
+      "grade": "B500C"
     },
     {
       "product_id": "REBAR-B500C-D16",
@@ -392,7 +419,8 @@
       "f_td": 434.7826086956522,
       "E": 200000.0,
       "eps_uk": 0.075,
-      "gamma_s": 1.15
+      "gamma_s": 1.15,
+      "grade": "B500C"
     },
     {
       "product_id": "REBAR-B500C-D20",
@@ -406,7 +434,8 @@
       "f_td": 434.7826086956522,
       "E": 200000.0,
       "eps_uk": 0.075,
-      "gamma_s": 1.15
+      "gamma_s": 1.15,
+      "grade": "B500C"
     },
     {
       "product_id": "REBAR-B500C-D25",
@@ -420,7 +449,8 @@
       "f_td": 434.7826086956522,
       "E": 200000.0,
       "eps_uk": 0.075,
-      "gamma_s": 1.15
+      "gamma_s": 1.15,
+      "grade": "B500C"
     },
     {
       "product_id": "REBAR-B500C-D28",
@@ -434,7 +464,8 @@
       "f_td": 434.7826086956522,
       "E": 200000.0,
       "eps_uk": 0.075,
-      "gamma_s": 1.15
+      "gamma_s": 1.15,
+      "grade": "B500C"
     },
     {
       "product_id": "REBAR-B500C-D32",
@@ -448,7 +479,8 @@
       "f_td": 434.7826086956522,
       "E": 200000.0,
       "eps_uk": 0.075,
-      "gamma_s": 1.15
+      "gamma_s": 1.15,
+      "grade": "B500C"
     },
     {
       "product_id": "REBAR-B500C-D40",
@@ -462,7 +494,8 @@
       "f_td": 434.7826086956522,
       "E": 200000.0,
       "eps_uk": 0.075,
-      "gamma_s": 1.15
+      "gamma_s": 1.15,
+      "grade": "B500C"
     }
   ],
   "columns": [
@@ -477,7 +510,8 @@
     "f_td",
     "E",
     "eps_uk",
-    "gamma_s"
+    "gamma_s",
+    "grade"
   ],
   "count": 33
 }

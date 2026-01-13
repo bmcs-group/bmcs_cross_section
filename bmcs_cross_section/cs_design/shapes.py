@@ -101,6 +101,11 @@ class RectangularShape(BMCSModel):
         return self.b * self.h
     
     @property
+    def A(self) -> float:
+        """Alias for area [mm²]"""
+        return self.area
+    
+    @property
     def centroid_y(self) -> float:
         """Y-coordinate of centroid from bottom [mm]"""
         return self.h / 2.0
@@ -266,6 +271,11 @@ class TShape(BMCSModel):
     def area(self) -> float:
         """Total cross-sectional area [mm²]"""
         return self.b_f * self.h_f + self.b_w * self.h_w
+    
+    @property
+    def A(self) -> float:
+        """Alias for area [mm²]"""
+        return self.area
     
     @property
     def centroid_y(self) -> float:
@@ -472,6 +482,11 @@ class IShape(BMCSModel):
     def area(self) -> float:
         """Total cross-sectional area [mm²]"""
         return 2 * self.b_f * self.h_f + self.b_w * self.h_w
+    
+    @property
+    def A(self) -> float:
+        """Alias for area [mm²]"""
+        return self.area
     
     @property
     def centroid_y(self) -> float:

@@ -65,7 +65,7 @@ def create_concrete_catalog(use_cache: bool = True) -> pd.DataFrame:
         product_id = f"CONCRETE-EC2-{strength_class}"
         
         # Create component with material model
-        matmod = EC2Concrete(f_cm=f_cm)
+        matmod = EC2Concrete(f_ck=f_ck)
         
         component = ConcreteComponent(
             product_id=product_id,

@@ -10,7 +10,9 @@
         "reportOptionalContextManager": "none",
         "reportPrivateImportUsage": "none",
         "reportUnboundVariable": "warning",
-        "reportAttributeAccessIssue": "none"
+        "reportAttributeAccessIssue": "none",
+        "reportArgumentType": "none",
+        "reportCallIssue": "none"
     },
     "python.analysis.autoImportCompletions": true,
     "python.analysis.extraPaths": [

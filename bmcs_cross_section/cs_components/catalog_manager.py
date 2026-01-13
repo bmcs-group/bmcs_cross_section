@@ -343,7 +343,7 @@ class CatalogManager:
         from bmcs_cross_section.cs_components.concrete_catalog import ConcreteComponent
         from bmcs_cross_section.matmod.ec2_concrete import EC2Concrete
         
-        matmod = EC2Concrete(f_cm=row['f_cm'])
+        matmod = EC2Concrete(f_ck=row['f_ck'])
         
         return ConcreteComponent(
             product_id=row['product_id'],

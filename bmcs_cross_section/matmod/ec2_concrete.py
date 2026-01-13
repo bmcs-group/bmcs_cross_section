@@ -33,13 +33,13 @@ class EC2Concrete(BMCSModel):
     # Primary parameters
     # -------------------------------------------------------------------------
     
-    f_cm: float = ui_field(
-        28.0,
-        label=r"$f_{cm}$",
+    f_ck: float = ui_field(
+        30.0,
+        label=r"$f_{ck}$",
         unit="MPa",
-        range=(20.0, 100.0),
-        step=1.0,
-        description="Mean compressive strength of concrete",
+        range=(12.0, 90.0),
+        step=5.0,
+        description="Characteristic compressive strength of concrete (cylinder)",
         gt=0
     )
     
@@ -109,9 +109,17 @@ class EC2Concrete(BMCSModel):
     # -------------------------------------------------------------------------
     
     @cached_property
-    def f_ck(self) -> float:
-        """Characteristic compressive strength [MPa]"""
-        return self.f_cm - 8.0
+    def f_cm(self) -> float:
+        """Mean compressive strength [MPa] (EC2: f_cm = f_ck + 8)"""
+        return self.f_ck + 8.0
+    
+    @cached_property
+    def f_cd(self) -> float:
+        """Design compressive strength [MPa] (EC2: f_cd = α_cc × f_ck / γ_c)"""
+        # Using α_cc = 1.0 and γ_c = 1.5 (typical EC2 values)
+        alpha_cc = 1.0
+        gamma_c = 1.5
+        return alpha_cc * self.f_ck / gamma_c
     
     @cached_property
     def f_ctm(self) -> float:

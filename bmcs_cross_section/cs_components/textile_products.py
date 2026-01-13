@@ -11,6 +11,7 @@ import pandas as pd
 from dataclasses import dataclass
 
 from bmcs_cross_section.cs_components.component_base import ReinforcementComponent
+from bmcs_cross_section.matmod import create_carbon
 
 
 @dataclass
@@ -44,6 +45,33 @@ class TextileReinforcementComponent(ReinforcementComponent):
         
         self.shape_type = 'textile'
         # Area is specified directly for textiles, not calculated from diameter
+        
+        # Create material model if not provided
+        if self.matmod is None:
+            if self.material_type == 'carbon':
+                # Use carbon material model (linear elastic to failure)
+                self.matmod = create_carbon(
+                    grade='C2000',  # Default grade
+                    factor=1.0,     # Characteristic values
+                    post_peak_factor=2.5  # For numerical stability
+                )
+                # Override with actual component properties
+                self.matmod.E = self.E
+                self.matmod.f_t = self.f_tk
+            elif self.material_type in ['glass', 'basalt', 'aramid']:
+                # For non-carbon textiles, create a simple linear elastic material
+                # using carbon model but with appropriate properties
+                self.matmod = create_carbon(
+                    grade='C2000',
+                    factor=1.0,
+                    post_peak_factor=2.5
+                )
+                # Override with actual properties from component
+                self.matmod.E = self.E
+                self.matmod.f_t = self.f_tk
+            else:
+                # Default fallback
+                self.matmod = create_carbon(grade='C2000', factor=1.0)
     
     def get_design_stress_strain(self, eps: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
         """

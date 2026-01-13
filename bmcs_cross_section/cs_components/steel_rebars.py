@@ -69,6 +69,12 @@ class SteelRebarComponent(ReinforcementComponent):
         """
         # Matmod represents characteristic behavior
         return self.matmod.get_sig(eps)
+    
+    def to_dict(self):
+        """Convert to dictionary for catalog, including steel grade."""
+        base_dict = super().to_dict()
+        base_dict['grade'] = self.grade
+        return base_dict
 
 
 def create_steel_rebar_catalog(use_cache: bool = True) -> pd.DataFrame:
