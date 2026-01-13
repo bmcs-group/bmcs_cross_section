@@ -12,13 +12,13 @@ from shutil import rmtree
 from setuptools import find_packages, setup, Command
 
 # Package meta-data.
-NAME = 'bmcs_cross_section'
+NAME = 'scite'
 DESCRIPTION = "Models of brittle-concrete composite cross sections."
 URL = 'https://github.com/bmcs-group/bmcs_cross_section'
 EMAIL = 'rostislav.chudoba@rwt-aachen.de'
 AUTHOR = 'BMCS-Group'
 REQUIRES_PYTHON = '>=3.6.0'
-from bmcs_cross_section.version import __version__
+from scite.version import __version__
 VERSION = __version__
 
 # What packages are required for this module to be executed?

@@ -3,7 +3,7 @@ requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "bmcs_cross_section"
+name = "scite"
 version = "0.1.0"
 description = "Models of brittle-concrete composite cross sections"
 readme = "README.md"
@@ -56,7 +56,7 @@ dev = [
 
 # All optional dependencies
 all = [
-    "bmcs_cross_section[notebook,legacy,dev]",
+    "scite[notebook,legacy,dev]",
 ]
 
 [project.urls]
@@ -67,11 +67,11 @@ Issues = "https://github.com/bmcs-group/bmcs_cross_section/issues"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["bmcs_cross_section*"]
+include = ["scite*"]
 exclude = ["tests*", "notebooks*", "build*", "dist*"]
 
 [tool.setuptools.package-data]
-bmcs_cross_section = ["py.typed"]
+scite = ["py.typed"]
 
 # Black configuration
 [tool.black]
