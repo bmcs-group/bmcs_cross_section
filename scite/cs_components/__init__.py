@@ -36,7 +36,7 @@ Component Types:
 
 Usage Example (Cached Catalogs):
 --------------------------------
-    >>> from bmcs_cross_section.cs_components import (
+    >>> from scite.cs_components import (
     ...     create_steel_rebar_catalog,
     ...     get_concrete_by_class,
     ...     get_catalog_manager

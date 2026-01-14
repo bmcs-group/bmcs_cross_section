@@ -21,7 +21,7 @@ class BMCSModel(BaseModel):
     
     Example:
         ```python
-        from bmcs_cross_section.core import BMCSModel, ui_field
+        from scite.core import BMCSModel, ui_field
         
         class ConcreteModel(BMCSModel):
             f_cm: float = ui_field(
@@ -157,8 +157,8 @@ class BMCSModelWithSymbolic(BMCSModel):
     
     Example:
         ```python
-        from bmcs_cross_section.core import BMCSModelWithSymbolic
-        from bmcs_cross_section.core.symbolic import SymbolicModel
+        from scite.core import BMCSModelWithSymbolic
+        from scite.core.symbolic import SymbolicModel
         
         class MyModel(BMCSModelWithSymbolic):
             # Define symbolic expressions at class level

@@ -18,9 +18,9 @@ import numpy.typing as npt
 from scipy.optimize import brentq
 import matplotlib.pyplot as plt
 
-from bmcs_cross_section.core import BMCSModel, ui_field
-from bmcs_cross_section.cs_design.cross_section import CrossSection
-from bmcs_cross_section.cs_design.cs_stress_strain_profile import StressStrainProfile
+from scite.core import BMCSModel, ui_field
+from scite.cs_design.cross_section import CrossSection
+from scite.cs_design.cs_stress_strain_profile import StressStrainProfile
 
 
 class MKappaAnalysis(BMCSModel):
@@ -328,10 +328,10 @@ def create_default_mkappa() -> MKappaAnalysis:
     Returns:
         MKappaAnalysis with rectangular section and standard reinforcement
     """
-    from bmcs_cross_section.cs_design.shapes import RectangularShape
-    from bmcs_cross_section.cs_design.reinforcement import ReinforcementLayout, ReinforcementLayer
-    from bmcs_cross_section.matmod.ec2_concrete import EC2Concrete
-    from bmcs_cross_section.matmod.steel_reinforcement import SteelReinforcement
+    from scite.cs_design.shapes import RectangularShape
+    from scite.cs_design.reinforcement import ReinforcementLayout, ReinforcementLayer
+    from scite.matmod.ec2_concrete import EC2Concrete
+    from scite.matmod.steel_reinforcement import SteelReinforcement
     
     # Create rectangular section 300x500 mm
     shape = RectangularShape(b=300.0, h=500.0)

@@ -18,9 +18,9 @@ The user iteratively adjusts eps_top and eps_bot to find a state where:
 from typing import Tuple
 import numpy as np
 
-from bmcs_cross_section.cs_design import CrossSection
-from bmcs_cross_section.cs_design.cs_stress_strain_profile import StressStrainProfile
-from bmcs_cross_section.core import BMCSModel, ui_field
+from scite.cs_design import CrossSection
+from scite.cs_design.cs_stress_strain_profile import StressStrainProfile
+from scite.core import BMCSModel, ui_field
 
 
 class NMAssessment(BMCSModel):
@@ -237,10 +237,10 @@ def create_default_nm_assessment() -> NMAssessment:
     Returns:
         NMAssessment with rectangular section and standard reinforcement
     """
-    from bmcs_cross_section.cs_design.shapes import RectangularShape
-    from bmcs_cross_section.cs_design.reinforcement import ReinforcementLayout, ReinforcementLayer
-    from bmcs_cross_section.matmod.ec2_concrete import EC2Concrete
-    from bmcs_cross_section.matmod.steel_reinforcement import SteelReinforcement
+    from scite.cs_design.shapes import RectangularShape
+    from scite.cs_design.reinforcement import ReinforcementLayout, ReinforcementLayer
+    from scite.matmod.ec2_concrete import EC2Concrete
+    from scite.matmod.steel_reinforcement import SteelReinforcement
     
     # Create rectangular section 300x500 mm
     shape = RectangularShape(b=300.0, h=500.0)

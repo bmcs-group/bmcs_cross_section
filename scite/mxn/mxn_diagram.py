@@ -10,18 +10,18 @@ from traits.api import \
 from bmcs_utils.api import \
     View, Item
 
-from bmcs_cross_section.mxn.mxn_tree_node import \
+from scite.mxn.mxn_tree_node import \
     MxNTreeNode
 
-from bmcs_cross_section.mxn.cross_section import \
+from scite.mxn.cross_section import \
     CrossSection
 
-from bmcs_cross_section.mxn.reinf_layout import \
+from scite.mxn.reinf_layout import \
     RLCTexUniform
 
 import numpy as np
 
-from bmcs_cross_section.mxn.matrix_cross_section import \
+from scite.mxn.matrix_cross_section import \
     MatrixCrossSection, MCSGeoRect
 
 class MxNDiagram(MxNTreeNode):

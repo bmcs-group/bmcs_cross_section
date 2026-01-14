@@ -14,8 +14,8 @@ import sympy as sp
 from functools import cached_property
 from typing import Optional
 
-from bmcs_cross_section.core import BMCSModel, ui_field
-from bmcs_cross_section.core.symbolic import SymbolicExpression
+from scite.core import BMCSModel, ui_field
+from scite.core.symbolic import SymbolicExpression
 
 
 class SteelReinforcement(BMCSModel):

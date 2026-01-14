@@ -249,7 +249,7 @@ class CatalogManager:
         if force_refresh:
             self.invalidate_catalog('steel_rebars')
         
-        from bmcs_cross_section.cs_components.steel_rebars import (
+        from scite.cs_components.steel_rebars import (
             create_steel_rebar_catalog
         )
         # Pass use_cache=False to avoid infinite recursion
@@ -271,7 +271,7 @@ class CatalogManager:
         if force_refresh:
             self.invalidate_catalog('carbon_bars')
         
-        from bmcs_cross_section.cs_components.carbon_bars import (
+        from scite.cs_components.carbon_bars import (
             create_carbon_bar_catalog
         )
         return self._get_or_create_catalog(
@@ -292,7 +292,7 @@ class CatalogManager:
         if force_refresh:
             self.invalidate_catalog('textile_products')
         
-        from bmcs_cross_section.cs_components.textile_products import (
+        from scite.cs_components.textile_products import (
             create_textile_catalog
         )
         return self._get_or_create_catalog(
@@ -313,7 +313,7 @@ class CatalogManager:
         if force_refresh:
             self.invalidate_catalog('concrete')
         
-        from bmcs_cross_section.cs_components.concrete_catalog import (
+        from scite.cs_components.concrete_catalog import (
             create_concrete_catalog
         )
         return self._get_or_create_catalog(
@@ -340,8 +340,8 @@ class CatalogManager:
         row = result.iloc[0]
         
         # Recreate component from cached data
-        from bmcs_cross_section.cs_components.concrete_catalog import ConcreteComponent
-        from bmcs_cross_section.matmod.ec2_concrete import EC2Concrete
+        from scite.cs_components.concrete_catalog import ConcreteComponent
+        from scite.matmod.ec2_concrete import EC2Concrete
         
         matmod = EC2Concrete(f_ck=row['f_ck'])
         
@@ -376,7 +376,7 @@ class CatalogManager:
         row = result.iloc[0]
         
         # Recreate component from cached data
-        from bmcs_cross_section.cs_components.steel_rebars import SteelRebarComponent
+        from scite.cs_components.steel_rebars import SteelRebarComponent
         
         return SteelRebarComponent(
             product_id=row['product_id'],

@@ -2,7 +2,7 @@ import numpy as np
 import traits.api as tr
 from bmcs_utils.api import \
     Model, Item, View, Float, Int, EitherType, EitherTypeEditor
-from bmcs_cross_section.matmod import ReinfMatMod, SteelReinfMatMod, CarbonReinfMatMod
+from scite.matmod import ReinfMatMod, SteelReinfMatMod, CarbonReinfMatMod
 
 
 class ReinfLayer(Model):

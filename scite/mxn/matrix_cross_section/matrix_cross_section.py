@@ -25,15 +25,15 @@ from .matrix_cross_section_geo_rect import \
 from bmcs_utils.api import \
     View, Item, InstanceEditor
 
-from bmcs_cross_section.mxn.material_types import \
+from scite.mxn.material_types import \
     MTMatrixMixture
 
-from bmcs_cross_section.mxn.cross_section_component import \
+from scite.mxn.cross_section_component import \
     CrossSectionComponent
 
 import numpy as np
 
-from bmcs_cross_section.mxn.utils import \
+from scite.mxn.utils import \
     KeyRef
 
 STATE_AND_GEOMETRY_CHANGE = 'eps_changed,+geo_input,geo.changed'

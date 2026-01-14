@@ -8,23 +8,23 @@ reinforcement and concrete products.
 import pandas as pd
 from typing import Optional, List, Union
 
-from bmcs_cross_section.cs_components.component_base import (
+from scite.cs_components.component_base import (
     ReinforcementComponent,
     ConcreteComponent
 )
-from bmcs_cross_section.cs_components.steel_rebars import (
+from scite.cs_components.steel_rebars import (
     SteelRebarComponent,
     create_steel_rebar_catalog
 )
-from bmcs_cross_section.cs_components.carbon_bars import (
+from scite.cs_components.carbon_bars import (
     CarbonBarComponent,
     create_carbon_bar_catalog
 )
-from bmcs_cross_section.cs_components.textile_products import (
+from scite.cs_components.textile_products import (
     TextileReinforcementComponent,
     create_textile_catalog
 )
-from bmcs_cross_section.cs_components.concrete_catalog import (
+from scite.cs_components.concrete_catalog import (
     create_concrete_catalog,
     get_concrete_by_class,
     get_concrete_by_fck

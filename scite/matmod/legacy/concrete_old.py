@@ -3,8 +3,8 @@ import sympy as sp
 import numpy as np
 import traits.api as tr
 
-from bmcs_cross_section.matmod.ec2 import EC2
-from bmcs_cross_section.matmod.matmod import MatMod
+from scite.matmod.ec2 import EC2
+from scite.matmod.matmod import MatMod
 
 class ConcreteMatMod(MatMod):
 

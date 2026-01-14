@@ -18,7 +18,7 @@ from typing import Optional, Tuple, TYPE_CHECKING
 from matplotlib.patches import Rectangle, FancyArrow
 
 if TYPE_CHECKING:
-    from bmcs_cross_section.cs_design.cross_section import CrossSection
+    from scite.cs_design.cross_section import CrossSection
 
 
 class StressStrainProfile:

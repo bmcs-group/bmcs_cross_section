@@ -13,8 +13,8 @@ import matplotlib.pyplot as plt
 from typing import Optional
 from matplotlib.gridspec import GridSpec
 
-from bmcs_cross_section.mkappa.mkappa import MKappaAnalysis
-from bmcs_cross_section.cs_design.cs_stress_strain_profile import StressStrainProfile
+from scite.mkappa.mkappa import MKappaAnalysis
+from scite.cs_design.cs_stress_strain_profile import StressStrainProfile
 
 
 class MKappaStateProfiles:

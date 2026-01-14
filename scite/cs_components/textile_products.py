@@ -10,8 +10,8 @@ import numpy.typing as npt
 import pandas as pd
 from dataclasses import dataclass
 
-from bmcs_cross_section.cs_components.component_base import ReinforcementComponent
-from bmcs_cross_section.matmod import create_carbon
+from scite.cs_components.component_base import ReinforcementComponent
+from scite.matmod import create_carbon
 
 
 @dataclass
@@ -135,7 +135,7 @@ def create_textile_catalog(use_cache: bool = True) -> pd.DataFrame:
         Use use_cache=False to force recreation (useful for development).
     """
     if use_cache:
-        from bmcs_cross_section.cs_components.catalog_manager import get_catalog_manager
+        from scite.cs_components.catalog_manager import get_catalog_manager
         return get_catalog_manager().get_textile_catalog()
     
     # Original creation logic (used when cache is bypassed or first time)

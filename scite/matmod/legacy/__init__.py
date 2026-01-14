@@ -9,14 +9,14 @@ Migration Guide:
 - reinforcement.CarbonReinfMatMod → (no modern equivalent yet)
 - concrete_old.py → concrete/ subfolder or ec2_concrete.EC2Concrete
 
-For new code, use the modern API from bmcs_cross_section.matmod instead.
+For new code, use the modern API from scite.matmod instead.
 """
 
 import warnings
 
 warnings.warn(
     "The matmod.legacy module contains deprecated traits-based material models. "
-    "Use the modern Pydantic-based API from bmcs_cross_section.matmod instead.",
+    "Use the modern Pydantic-based API from scite.matmod instead.",
     DeprecationWarning,
     stacklevel=2
 )

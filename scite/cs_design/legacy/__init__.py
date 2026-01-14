@@ -18,7 +18,7 @@ import warnings
 
 warnings.warn(
     "The cs_design.legacy module contains deprecated traits-based classes. "
-    "Use the modern Pydantic-based API from bmcs_cross_section.cs_design instead.",
+    "Use the modern Pydantic-based API from scite.cs_design instead.",
     DeprecationWarning,
     stacklevel=2
 )

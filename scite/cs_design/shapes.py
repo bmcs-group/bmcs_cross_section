@@ -11,7 +11,7 @@ import numpy as np
 import numpy.typing as npt
 from matplotlib.patches import Rectangle
 
-from bmcs_cross_section.core import BMCSModel, ui_field
+from scite.core import BMCSModel, ui_field
 
 
 class Shape(Protocol):

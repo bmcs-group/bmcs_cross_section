@@ -6,7 +6,7 @@ import traits.api as tr
 import numpy as np
 import sympy as sp
 import matplotlib.pyplot as plt
-from bmcs_cross_section.matmod import ConcreteMatMod
+from scite.matmod import ConcreteMatMod
 
 class ConcreteMaterialModelAdvExpr(bu.SymbExpr):
     # continue here

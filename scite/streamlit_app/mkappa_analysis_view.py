@@ -14,10 +14,10 @@ import streamlit as st
 import matplotlib.pyplot as plt
 import numpy as np
 
-from bmcs_cross_section.cs_design import CrossSection
-from bmcs_cross_section.mkappa.mkappa import MKappaAnalysis
-from bmcs_cross_section.mkappa.mkappa_state_profiles import MKappaStateProfiles
-from bmcs_cross_section.matmod import EC2Concrete
+from scite.cs_design import CrossSection
+from scite.mkappa.mkappa import MKappaAnalysis
+from scite.mkappa.mkappa_state_profiles import MKappaStateProfiles
+from scite.matmod import EC2Concrete
 
 
 def get_cross_section_hash(cs):
@@ -59,10 +59,10 @@ def get_cross_section_hash(cs):
 
 def initialize_default_cross_section():
     """Initialize a default cross-section for standalone testing"""
-    from bmcs_cross_section.cs_design import (
+    from scite.cs_design import (
         RectangularShape, BarReinforcement, ReinforcementLayout
     )
-    from bmcs_cross_section.cs_components import SteelRebarComponent
+    from scite.cs_components import SteelRebarComponent
     
     # Default rectangular cross-section: b=300mm, h=500mm
     if 'cs_shape_params' not in st.session_state:
@@ -98,7 +98,7 @@ def initialize_default_cross_section():
 def get_cross_section_from_state():
     """Build CrossSection from session state (from cross_section_view)"""
     # Import here to avoid circular imports
-    from bmcs_cross_section.streamlit_app.cross_section_view import (
+    from scite.streamlit_app.cross_section_view import (
         create_shape_from_params, 
         build_reinforcement_from_layers
     )

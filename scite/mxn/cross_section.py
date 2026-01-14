@@ -19,18 +19,18 @@ from matplotlib.figure import \
 from bmcs_utils.api import \
     View, Item
 
-from bmcs_cross_section.mxn.mxn_tree_node import \
+from scite.mxn.mxn_tree_node import \
     ReinfLayoutTreeNode
 
-from bmcs_cross_section.api import ReinfLayer
+from scite.api import ReinfLayer
 
-from bmcs_cross_section.mxn.cross_section_state import \
+from scite.mxn.cross_section_state import \
     CrossSectionState
 
-from bmcs_cross_section.mxn.matrix_cross_section import \
+from scite.mxn.matrix_cross_section import \
     MatrixCrossSection
 
-from bmcs_cross_section.mxn.reinf_layout import \
+from scite.mxn.reinf_layout import \
     ReinfLayoutComponent
 
 import numpy as np

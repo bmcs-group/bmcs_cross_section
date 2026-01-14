@@ -16,7 +16,7 @@ except ImportError:
     display = None
     plt = None
 
-from bmcs_cross_section.core.ui.base import UIAdapter, get_ui_metadata, get_all_ui_fields
+from scite.core.ui.base import UIAdapter, get_ui_metadata, get_all_ui_fields
 
 
 class JupyterAdapter(UIAdapter):

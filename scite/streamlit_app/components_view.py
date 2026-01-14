@@ -11,14 +11,14 @@ Can be run standalone for testing:
 
 import streamlit as st
 import matplotlib.pyplot as plt
-from bmcs_cross_section.cs_components import (
+from scite.cs_components import (
     get_catalog_manager,
     SteelRebarComponent,
     CarbonBarComponent,
     TextileReinforcementComponent,
     ConcreteComponent,
 )
-from bmcs_cross_section.matmod.ec2_concrete import EC2Concrete
+from scite.matmod.ec2_concrete import EC2Concrete
 
 
 def get_catalog_manager_cached():

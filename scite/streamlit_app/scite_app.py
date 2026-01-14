@@ -11,15 +11,14 @@ Main Streamlit application integrating all workflow steps:
 Run with: streamlit run scite_app.py
 """
 
-import streamlit as st
 from pathlib import Path
 
-from bmcs_cross_section.streamlit_app import (
-    render_components_view,
-    render_cross_section_view,
-    render_state_profiles_view,
-    render_summary_view,
-)
+import streamlit as st
+
+from scite.streamlit_app import (render_components_view,
+                                 render_cross_section_view,
+                                 render_state_profiles_view,
+                                 render_summary_view)
 
 
 def initialize_session_state():
@@ -85,7 +84,7 @@ def main():
         
         /* Inject title into header */
         header[data-testid="stHeader"]::before {
-            content: SCITE — Structural Concrete Interative Teaching Environment";
+            content: "SCITE — Structural Concrete Interactive Teaching Environment";
             color: white;
             font-size: 1.5rem;
             font-weight: 600;
@@ -256,10 +255,12 @@ def main():
     elif current_step == "state_profiles":
         render_state_profiles_view()
     elif current_step == "mkappa":
-        from bmcs_cross_section.streamlit_app.mkappa_analysis_view import render_mkappa_analysis_view
+        from scite.streamlit_app.mkappa_analysis_view import \
+            render_mkappa_analysis_view
         render_mkappa_analysis_view()
     elif current_step == "nm_assessment":
-        from bmcs_cross_section.streamlit_app.nm_assessment_view import render_nm_assessment_view
+        from scite.streamlit_app.nm_assessment_view import \
+            render_nm_assessment_view
         render_nm_assessment_view()
     elif current_step == "summary":
         render_summary_view()

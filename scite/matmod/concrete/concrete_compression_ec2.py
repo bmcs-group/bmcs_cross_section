@@ -2,7 +2,7 @@ import bmcs_utils.api as bu
 import sympy as sp
 import traits.api as tr
 import numpy as np
-from bmcs_cross_section.matmod import MatMod
+from scite.matmod import MatMod
 
 class ConcreteCompressionEC2SymbExpr(bu.SymbExpr):
     eps = sp.Symbol('eps', real=True)

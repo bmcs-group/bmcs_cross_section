@@ -1,6 +1,6 @@
 import bmcs_utils.api as bu
 import numpy as np
-from bmcs_cross_section.matmod.matmod import MatMod
+from scite.matmod.matmod import MatMod
 from .concrete_compression_pwl import  ConcreteCompressionPWL
 from .concrete_compression_ec2_plateau import ConcreteCompressionEC2Plateau
 from .concrete_compression_ec2 import ConcreteCompressionEC2

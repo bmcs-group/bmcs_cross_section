@@ -11,8 +11,8 @@ import numpy as np
 import numpy.typing as npt
 from pydantic import field_validator
 
-from bmcs_cross_section.core import BMCSModel, ui_field
-from bmcs_cross_section.matmod.steel_reinforcement import SteelReinforcement, create_steel
+from scite.core import BMCSModel, ui_field
+from scite.matmod.steel_reinforcement import SteelReinforcement, create_steel
 
 
 class ReinforcementLayer(BMCSModel):
@@ -445,7 +445,7 @@ class BarReinforcement(BMCSModel):
         name: Optional layer identifier
     
     Example:
-        >>> from bmcs_cross_section.cs_components import SteelRebarComponent
+        >>> from scite.cs_components import SteelRebarComponent
         >>> steel = SteelRebarComponent(nominal_diameter=20, grade='B500B')
         >>> layer = BarReinforcement(z=450, component=steel, count=4)
         >>> print(layer.A_s)  # 4 × component.area
@@ -528,7 +528,7 @@ class LayerReinforcement(BMCSModel):
         name: Optional layer identifier
     
     Example:
-        >>> from bmcs_cross_section.cs_components import TextileReinforcementComponent
+        >>> from scite.cs_components import TextileReinforcementComponent
         >>> textile = TextileReinforcementComponent(spacing=14, A_roving=1.8)
         >>> layer = LayerReinforcement(z=25, component=textile, width=300)
         >>> print(layer.A_s)  # (width / spacing) × A_roving
@@ -625,7 +625,7 @@ class AreaReinforcement(BMCSModel):
         name: Optional layer identifier
     
     Example:
-        >>> from bmcs_cross_section.matmod import create_steel
+        >>> from scite.matmod import create_steel
         >>> layer = AreaReinforcement(z=450, A_s=1500, material=create_steel('B500B'))
     """
     

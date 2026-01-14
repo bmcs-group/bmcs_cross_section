@@ -1,6 +1,6 @@
 import numpy as np
 
-from bmcs_cross_section.norms.ec2 import EC2
+from scite.norms.ec2 import EC2
 
 
 class ACI440:

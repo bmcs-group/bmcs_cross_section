@@ -5,16 +5,16 @@ Modern foundation for computational structural mechanics models.
 Provides base classes, symbolic math integration, and UI abstraction.
 """
 
-from bmcs_cross_section.core.model import BMCSModel
-from bmcs_cross_section.core.symbolic import SymbolicExpression, SymbolicModel
-from bmcs_cross_section.core.ui.base import (
+from scite.core.model import BMCSModel
+from scite.core.symbolic import SymbolicExpression, SymbolicModel
+from scite.core.ui.base import (
     ui_field, 
     UIMetadata, 
     UIAdapter,
     get_ui_metadata,
     get_all_ui_fields,
 )
-from bmcs_cross_section.core.types import (
+from scite.core.types import (
     ArrayLike,
     FloatArray,
     StressStrainCurve,

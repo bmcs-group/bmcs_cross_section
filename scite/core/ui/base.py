@@ -86,7 +86,7 @@ def ui_field(
         
     Example:
         ```python
-        from bmcs_cross_section.core import BMCSModel, ui_field
+        from scite.core import BMCSModel, ui_field
         
         class ConcreteModel(BMCSModel):
             f_cm: float = ui_field(
@@ -180,7 +180,7 @@ def interactive(plot_function: Optional[Callable] = None):
         
     Example:
         ```python
-        from bmcs_cross_section.core.ui import interactive
+        from scite.core.ui import interactive
         
         class ConcreteModel(BMCSModel):
             f_cm: float = ui_field(30.0, label="f_cm", range=(20, 100))
@@ -206,7 +206,7 @@ def interactive(plot_function: Optional[Callable] = None):
                 # Try Jupyter first
                 from IPython import get_ipython
                 if get_ipython() is not None:
-                    from bmcs_cross_section.core.ui.jupyter import create_interactive_plot
+                    from scite.core.ui.jupyter import create_interactive_plot
                     return create_interactive_plot(self, func, *args, **kwargs)
             except (ImportError, AttributeError):
                 pass

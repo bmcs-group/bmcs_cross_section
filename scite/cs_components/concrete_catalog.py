@@ -9,8 +9,8 @@ import pandas as pd
 from dataclasses import dataclass
 from typing import Optional, Any
 
-from bmcs_cross_section.cs_components.component_base import ConcreteComponent
-from bmcs_cross_section.matmod.ec2_concrete import EC2Concrete
+from scite.cs_components.component_base import ConcreteComponent
+from scite.matmod.ec2_concrete import EC2Concrete
 
 
 def create_concrete_catalog(use_cache: bool = True) -> pd.DataFrame:
@@ -33,7 +33,7 @@ def create_concrete_catalog(use_cache: bool = True) -> pd.DataFrame:
         Use use_cache=False to force recreation (useful for development).
     """
     if use_cache:
-        from bmcs_cross_section.cs_components.catalog_manager import get_catalog_manager
+        from scite.cs_components.catalog_manager import get_catalog_manager
         return get_catalog_manager().get_concrete_catalog()
     
     # Original creation logic (used when cache is bypassed or first time)
@@ -97,7 +97,7 @@ def get_concrete_by_class(strength_class: str) -> Optional[ConcreteComponent]:
         the catalog, subsequent calls load from JSON cache.
     """
     # Use catalog manager for cached access
-    from bmcs_cross_section.cs_components.catalog_manager import get_catalog_manager
+    from scite.cs_components.catalog_manager import get_catalog_manager
     return get_catalog_manager().get_concrete_by_class(strength_class)
 
 

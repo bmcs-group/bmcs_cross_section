@@ -13,8 +13,8 @@ Inherits all visualization from StressStrainProfile - no redundancy.
 import streamlit as st
 import matplotlib.pyplot as plt
 
-from bmcs_cross_section.cs_design import CrossSection
-from bmcs_cross_section.nm_assess import NMAssessment
+from scite.cs_design import CrossSection
+from scite.nm_assess import NMAssessment
 
 
 def get_cross_section_hash(cs):
@@ -56,11 +56,11 @@ def get_cross_section_hash(cs):
 
 def get_cross_section_from_state():
     """Build CrossSection from session state (from cross_section_view)"""
-    from bmcs_cross_section.streamlit_app.cross_section_view import (
+    from scite.streamlit_app.cross_section_view import (
         create_shape_from_params,
         build_reinforcement_from_layers
     )
-    from bmcs_cross_section.matmod import EC2Concrete
+    from scite.matmod import EC2Concrete
     
     if 'cs_shape_params' not in st.session_state:
         return None

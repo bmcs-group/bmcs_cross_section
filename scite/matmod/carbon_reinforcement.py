@@ -11,7 +11,7 @@ from pydantic import Field, field_validator
 import matplotlib.pyplot as plt
 from typing import Optional
 
-from bmcs_cross_section.core import BMCSModel
+from scite.core import BMCSModel
 
 
 class CarbonReinforcement(BMCSModel):

@@ -12,7 +12,7 @@ except ImportError:
     STREAMLIT_AVAILABLE = False
     st = None
 
-from bmcs_cross_section.core.ui.base import UIAdapter, get_ui_metadata, get_all_ui_fields
+from scite.core.ui.base import UIAdapter, get_ui_metadata, get_all_ui_fields
 
 
 class StreamlitAdapter(UIAdapter):
@@ -139,7 +139,7 @@ class StreamlitApp:
     
     Example:
         ```python
-        from bmcs_cross_section.core.ui.streamlit import StreamlitApp
+        from scite.core.ui.streamlit import StreamlitApp
         
         class ConcreteModelApp(StreamlitApp):
             title = "Concrete Material Model"

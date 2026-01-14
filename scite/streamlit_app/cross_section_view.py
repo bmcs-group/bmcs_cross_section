@@ -13,19 +13,19 @@ import streamlit as st
 import matplotlib.pyplot as plt
 import numpy as np
 
-from bmcs_cross_section.cs_design import (
+from scite.cs_design import (
     RectangularShape, TShape, IShape,
     BarReinforcement, LayerReinforcement, AreaReinforcement,
     ReinforcementLayout, CrossSection
 )
-from bmcs_cross_section.cs_components import (
+from scite.cs_components import (
     SteelRebarComponent,
     CarbonBarComponent,
     TextileReinforcementComponent,
     get_concrete_by_class,
     get_catalog_manager,
 )
-from bmcs_cross_section.matmod import create_steel, create_carbon
+from scite.matmod import create_steel, create_carbon
 
 
 def get_catalog_manager_cached():
@@ -463,8 +463,8 @@ def render_cross_section_view():
             st.markdown("---")
             
             # Concrete material selection
-            from bmcs_cross_section.cs_components import get_catalog_manager
-            from bmcs_cross_section.matmod.ec2_concrete import EC2Concrete
+            from scite.cs_components import get_catalog_manager
+            from scite.matmod.ec2_concrete import EC2Concrete
             
             catalog_manager = get_catalog_manager()
             concrete_catalog = catalog_manager.get_concrete_catalog()
@@ -672,7 +672,7 @@ def render_cross_section_view():
                 shape = create_shape_from_params()
                 
                 # Build concrete component
-                from bmcs_cross_section.cs_components import get_concrete_by_class
+                from scite.cs_components import get_concrete_by_class
                 concrete = get_concrete_by_class(st.session_state.cs_concrete_selected)
                 
                 # Build reinforcement from layers using component database

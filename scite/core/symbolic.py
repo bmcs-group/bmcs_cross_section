@@ -119,7 +119,7 @@ class SymbolicModel:
     
     Example:
         ```python
-        from bmcs_cross_section.core.symbolic import SymbolicModel
+        from scite.core.symbolic import SymbolicModel
         
         # Create model
         symb = SymbolicModel()

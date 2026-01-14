@@ -16,10 +16,10 @@ import numpy.typing as npt
 import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle as MPLRectangle, Polygon
 
-from bmcs_cross_section.core import BMCSModel, ui_field
-from bmcs_cross_section.cs_design.shapes import RectangularShape, TShape, IShape
-from bmcs_cross_section.cs_design.reinforcement import ReinforcementLayout
-from bmcs_cross_section.matmod.ec2_concrete import EC2Concrete
+from scite.core import BMCSModel, ui_field
+from scite.cs_design.shapes import RectangularShape, TShape, IShape
+from scite.cs_design.reinforcement import ReinforcementLayout
+from scite.matmod.ec2_concrete import EC2Concrete
 
 
 class CrossSection(BMCSModel):

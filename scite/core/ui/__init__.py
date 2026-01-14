@@ -3,7 +3,7 @@ UI adapters for Jupyter notebooks and Streamlit.
 """
 
 # Import base classes first
-from bmcs_cross_section.core.ui.base import (
+from scite.core.ui.base import (
     UIMetadata,
     UIAdapter,
     ui_field,
@@ -13,13 +13,13 @@ from bmcs_cross_section.core.ui.base import (
 )
 
 # Then import framework-specific adapters
-from bmcs_cross_section.core.ui.jupyter import (
+from scite.core.ui.jupyter import (
     JupyterAdapter,
     create_interactive_plot,
     create_widget,
 )
 
-from bmcs_cross_section.core.ui.streamlit import (
+from scite.core.ui.streamlit import (
     StreamlitAdapter,
     StreamlitApp,
 )

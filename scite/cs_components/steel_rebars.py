@@ -11,8 +11,8 @@ import pandas as pd
 from dataclasses import dataclass
 from typing import Optional, Any
 
-from bmcs_cross_section.cs_components.component_base import ReinforcementComponent
-from bmcs_cross_section.matmod.steel_reinforcement import create_steel
+from scite.cs_components.component_base import ReinforcementComponent
+from scite.matmod.steel_reinforcement import create_steel
 
 
 @dataclass
@@ -94,7 +94,7 @@ def create_steel_rebar_catalog(use_cache: bool = True) -> pd.DataFrame:
         Use use_cache=False to force recreation (useful for development).
     """
     if use_cache:
-        from bmcs_cross_section.cs_components.catalog_manager import get_catalog_manager
+        from scite.cs_components.catalog_manager import get_catalog_manager
         return get_catalog_manager().get_steel_catalog()
     
     # Original creation logic (used when cache is bypassed or first time)

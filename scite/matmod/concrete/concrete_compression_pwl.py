@@ -2,7 +2,7 @@ import bmcs_utils.api as bu
 import sympy as sp
 import numpy as np
 import traits.api as tr
-from bmcs_cross_section.matmod import MatMod
+from scite.matmod import MatMod
 
 class ConcreteCompressionPWLSymbExpr(bu.SymbExpr):
     """Piecewise linear concrete material law for compression
