@@ -22,6 +22,13 @@ from scite.cs_design.reinforcement import ReinforcementLayout
 from scite.matmod.ec2_concrete import EC2Concrete
 
 
+def to_scalar(val):
+    """Convert numpy array or scalar to Python float (numpy 2.x compatible)."""
+    if hasattr(val, 'item'):
+        return float(val.item())
+    return float(val)
+
+
 class CrossSection(BMCSModel):
     """
     Complete cross-section assembly with geometry, concrete, and reinforcement.
@@ -162,8 +169,8 @@ class CrossSection(BMCSModel):
         N_s, M_s = self.reinforcement.get_N_M(kappa, eps_bottom, y_ref)
         
         # 7. Total force and moment
-        N_total = float(N_c + N_s)
-        M_total = float(M_c + M_s)
+        N_total = to_scalar(N_c + N_s)
+        M_total = to_scalar(M_c + M_s)
         
         return N_total, M_total
     

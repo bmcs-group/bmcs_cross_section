@@ -11,14 +11,22 @@ Integrates with CrossSection objects to compute:
 - Force resultants (N, M) with visualization
 """
 
+from typing import TYPE_CHECKING, Optional, Tuple
+
+import matplotlib.pyplot as plt
 import numpy as np
 import numpy.typing as npt
-import matplotlib.pyplot as plt
-from typing import Optional, Tuple, TYPE_CHECKING
-from matplotlib.patches import Rectangle, FancyArrow
+from matplotlib.patches import FancyArrow, Rectangle
 
 if TYPE_CHECKING:
     from scite.cs_design.cross_section import CrossSection
+
+
+def to_scalar(val):
+    """Convert numpy array or scalar to Python float (numpy 2.x compatible)."""
+    if hasattr(val, 'item'):
+        return float(val.item())
+    return float(val)
 
 
 class StressStrainProfile:
@@ -296,7 +304,7 @@ class StressStrainProfile:
             strains_permille: Strain values in permille for positioning
         """
         from matplotlib.patches import Polygon
-        
+
         # Triangle dimensions
         y_mid = self.cs.h_total / 2
         unit_length = 0.10 * self.cs.h_total  # Vertical side: 10% of height
@@ -390,8 +398,8 @@ class StressStrainProfile:
         
         # Calculate forces
         F_c, F_s, N_total, M_total = self.get_force_resultants()
-        F_c_val = float(F_c) / 1000  # Convert to kN
-        F_s_val = float(F_s) / 1000  # Convert to kN
+        F_c_val = to_scalar(F_c) / 1000  # Convert to kN
+        F_s_val = to_scalar(F_s) / 1000  # Convert to kN
         
         # Find neutral axis (where strain = 0)
         neutral_axis_z = None
@@ -594,8 +602,8 @@ class StressStrainProfile:
         ax_stress_twin.set_xlim(-max_stress * 1.35, max_stress * 1.35)
         
         # Add assessment or summary text box in bottom-left area
-        N_val = float(N_total)
-        M_val = float(M_total)
+        N_val = to_scalar(N_total)
+        M_val = to_scalar(M_total)
         
         # Position box in bottom-left area
         x_pos = -max_force * 1.35 / 2
