@@ -15,6 +15,13 @@ from scite.core import BMCSModel, ui_field
 from scite.matmod.steel_reinforcement import SteelReinforcement, create_steel
 
 
+def to_scalar(val):
+    """Convert numpy array or scalar to Python float (numpy 2.x compatible)."""
+    if hasattr(val, 'item'):
+        return float(val.item())
+    return float(val)
+
+
 class ReinforcementLayer(BMCSModel):
     """
     Single layer of reinforcement in a cross-section.
@@ -97,7 +104,7 @@ class ReinforcementLayer(BMCSModel):
         
         # Return scalar if input was scalar
         if np.isscalar(eps):
-            return float(sig_array[0])
+            return to_scalar(sig_array[0])
         return sig_array
     
     def get_force(self, eps: float) -> float:
@@ -113,7 +120,7 @@ class ReinforcementLayer(BMCSModel):
             Force [N]
         """
         sig = self.get_sig(eps)
-        return float(self.A_s * sig)
+        return to_scalar(self.A_s * sig)
     
     def get_moment_arm(self, y_ref: float = 0.0) -> float:
         """
@@ -505,7 +512,7 @@ class BarReinforcement(BMCSModel):
     def get_force(self, eps: float) -> float:
         """Get force: F = A_s × σ(ε)"""
         sig = self.get_sig(eps)
-        return float(self.A_s * sig)
+        return to_scalar(self.A_s * sig)
     
     def get_moment(self, eps: float, y_ref: float = 0.0) -> float:
         """Get moment: M = F × (z - y_ref)"""
@@ -602,7 +609,7 @@ class LayerReinforcement(BMCSModel):
     def get_force(self, eps: float) -> float:
         """Get force: F = A_s × σ(ε)"""
         sig = self.get_sig(eps)
-        return float(self.A_s * sig)
+        return to_scalar(self.A_s * sig)
     
     def get_moment(self, eps: float, y_ref: float = 0.0) -> float:
         """Get moment: M = F × (z - y_ref)"""
@@ -663,13 +670,13 @@ class AreaReinforcement(BMCSModel):
         sig_array = self.material.get_sig(eps_array)
         
         if np.isscalar(eps):
-            return float(sig_array[0])
+            return to_scalar(sig_array[0])
         return sig_array
     
     def get_force(self, eps: float) -> float:
         """Get force: F = A_s × σ(ε)"""
         sig = self.get_sig(eps)
-        return float(self.A_s * sig)
+        return to_scalar(self.A_s * sig)
     
     def get_moment(self, eps: float, y_ref: float = 0.0) -> float:
         """Get moment: M = F × (z - y_ref)"""
