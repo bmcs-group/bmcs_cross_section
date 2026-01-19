@@ -1,8 +1,17 @@
+"""
+Legacy Material Model Base Class
 
-import bmcs_utils.api as bu
+This is a legacy base class for old traits-based material models.
+Modern implementations should inherit from scite.core.BMCSModel instead.
+"""
 
-class MatMod(bu.Model):
-    """Base class for material models"""
+
+class MatMod:
+    """Legacy base class for material models (deprecated)
+    
+    Note: New material models should inherit from scite.core.BMCSModel
+    instead of this legacy class.
+    """
 
     def get_eps_plot_range(self):
         raise NotImplementedError

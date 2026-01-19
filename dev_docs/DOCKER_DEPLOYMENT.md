@@ -11,6 +11,29 @@ This guide describes the procedure for deploying the SCITE Streamlit application
 - Open port on the virtual machine (default: 8501 for Streamlit)
 - Network configuration allowing access from university framework
 
+## Local Development Environment
+
+To ensure your development environment matches the Docker deployment, create a dedicated conda environment:
+
+```bash
+# Create the scite_env environment using mamba (much faster than conda)
+cd /home/rch/Coding/scite
+mamba env create -f environment_scite.yml
+
+# Or if you don't have mamba installed, use conda (slower):
+# conda env create -f environment_scite.yml
+
+# Activate the environment
+conda activate scite_env
+
+# Install the package in editable mode
+pip install -e .
+```
+
+**Note:** If you don't have mamba installed, install it with: `conda install -n base -c conda-forge mamba`
+
+This environment includes only the core dependencies (numpy, scipy, sympy, matplotlib, streamlit) without legacy packages like `bmcs_utils` or `traits`, matching the Docker deployment configuration.
+
 ## Deployment Architecture
 
 ```
@@ -27,6 +50,8 @@ Streamlit (port 8501)
 
 Create a `Dockerfile` in the root of the SCITE project:
 
+**Note on Dependencies:** The Dockerfile installs only the core dependencies needed for the Streamlit frontend (numpy, scipy, sympy, matplotlib, streamlit). Legacy traits-based modules (in `legacy/`, `pullout/`, `analytical_solutions/`) are NOT included in the Docker deployment as they're not used by the modern Streamlit interface.
+
 ```dockerfile
 # Use Python 3.10 or higher as base image
 FROM python:3.10-slim
@@ -42,12 +67,11 @@ RUN apt-get update && apt-get install -y \
 # Copy project files
 COPY . /app
 
-# Install Python dependencies
+# Install Python dependencies (includes numpy, scipy, sympy, matplotlib, streamlit)
+# Note: This installs only core dependencies from pyproject.toml
+# Legacy modules (traits-based) are NOT included in Docker deployment
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -e .
-
-# Install Streamlit if not in dependencies
-RUN pip install --no-cache-dir streamlit
 
 # Expose Streamlit default port
 EXPOSE 8501
@@ -62,7 +86,94 @@ ENV STREAMLIT_BROWSER_GATHER_USAGE_STATS=false
 CMD ["streamlit", "run", "scite/streamlit_app/scite_app.py", "--server.port=8501", "--server.address=0.0.0.0"]
 ```
 
-## Step 2: Create .dockerignore
+## Step 2: Test Docker Build Locally (Optional but Recommended)
+
+Before deploying to the server, test the Docker build on your local laptop:
+
+### 2.1 Create the Dockerfile
+
+In the root of your project (`/home/rch/Coding/scite/`), create the `Dockerfile` with the content shown in Step 1.
+
+### 2.2 Create the .dockerignore
+
+Create `.dockerignore` in the project root (see Step 3 below for content).
+
+### 2.3 Build the Docker Image Locally
+
+```bash
+# Navigate to project root
+cd /home/rch/Coding/scite
+
+# Build the Docker image
+docker build -t scite-app:test .
+```
+
+This will take a few minutes as it downloads the Python base image and installs all dependencies.
+
+### 2.4 Run the Container Locally
+
+```bash
+# Run the container
+docker run -d \
+  --name scite-test \
+  -p 8501:8501 \
+  scite-app:test
+
+# Check if container is running
+docker ps
+```
+
+### 2.5 Access the Application
+
+Open your browser and navigate to:
+```
+http://localhost:8501
+```
+
+You should see the SCITE application running in your browser.
+
+### 2.6 View Logs (if needed)
+
+```bash
+# View logs in real-time
+docker logs -f scite-test
+
+# Or view last 50 lines
+docker logs --tail 50 scite-test
+```
+
+### 2.7 Stop and Clean Up After Testing
+
+```bash
+# Stop the container
+docker stop scite-test
+
+# Remove the container
+docker rm scite-test
+
+# Optional: Remove the image to free space
+docker rmi scite-app:test
+```
+
+### 2.8 Troubleshooting Local Build
+
+**If build fails:**
+- Check that you're in the project root directory
+- Ensure `pyproject.toml` and `setup.py` are present
+- Check Docker logs for specific errors: `docker logs scite-test`
+
+**If you can't access localhost:8501:**
+- Check if port 8501 is already in use: `sudo lsof -i :8501`
+- Kill existing Streamlit processes: `pkill streamlit`
+- Verify container is running: `docker ps`
+
+**If dependencies fail to install:**
+- Check your internet connection
+- Try building without cache: `docker build --no-cache -t scite-app:test .`
+
+Once local testing is successful, you can proceed with confidence to deploy on the server.
+
+## Step 3: Create .dockerignore
 
 Create a `.dockerignore` file to exclude unnecessary files:
 

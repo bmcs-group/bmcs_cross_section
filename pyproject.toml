@@ -23,13 +23,13 @@ classifiers = [
 ]
 keywords = ["structural engineering", "cross section", "moment curvature", "concrete", "composite materials"]
 
-# Core dependencies - minimal set for computation
+# Core dependencies - minimal set for computation and Streamlit frontend
 dependencies = [
     "numpy>=1.20",
     "scipy>=1.7",
-    "sympy>=1.9",  # Removed upper bound for compatibility with legacy code
+    "sympy>=1.9",
     "matplotlib>=3.3",
-    "traits>=6.3",
+    "streamlit>=1.28",
 ]
 
 [project.optional-dependencies]
@@ -40,9 +40,10 @@ notebook = [
     "ipympl>=0.8",
 ]
 
-# Full bmcs_utils dependency (to be phased out)
+# Legacy dependencies for old traits-based GUI modules
 legacy = [
     "bmcs_utils",
+    "traits>=6.3",  # Only needed for legacy/pullout/analytical_solutions modules
 ]
 
 # Development tools
