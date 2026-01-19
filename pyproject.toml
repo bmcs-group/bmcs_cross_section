@@ -25,11 +25,12 @@ keywords = ["structural engineering", "cross section", "moment curvature", "conc
 
 # Core dependencies - minimal set for computation and Streamlit frontend
 dependencies = [
-    "numpy>=1.20",
+    "numpy>=1.20,<2.0",  # Pin to 1.x to avoid numpy 2.0 breaking changes
     "scipy>=1.7",
     "sympy>=1.9",
     "matplotlib>=3.3",
     "streamlit>=1.28",
+    "pydantic>=2.0",
 ]
 
 [project.optional-dependencies]
