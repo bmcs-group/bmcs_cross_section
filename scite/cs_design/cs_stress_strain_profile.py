@@ -558,7 +558,8 @@ class StressStrainProfile:
                 sig = sig_reinf[i]
                 layer_number = idx + 1  # 1-based numbering from bottom
                 
-                F_s_layer = float(self.cs.reinforcement.layers[i].get_force(eps)) / 1000  # kN
+                F_s_layer_raw = self.cs.reinforcement.layers[i].get_force(eps)
+                F_s_layer = float(F_s_layer_raw.item() if hasattr(F_s_layer_raw, 'item') else F_s_layer_raw) / 1000  # kN
                 if abs(F_s_layer) > 0.1:
                     arrow_len = F_s_layer
                     head_width = self.cs.h_total * 0.04
