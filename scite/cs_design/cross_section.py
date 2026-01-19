@@ -11,14 +11,16 @@ for a given strain distribution, which is the interface mkappa will use.
 """
 
 from typing import Optional
+
+import matplotlib.pyplot as plt
 import numpy as np
 import numpy.typing as npt
-import matplotlib.pyplot as plt
-from matplotlib.patches import Rectangle as MPLRectangle, Polygon
+from matplotlib.patches import Polygon
+from matplotlib.patches import Rectangle as MPLRectangle
 
 from scite.core import BMCSModel, ui_field
-from scite.cs_design.shapes import RectangularShape, TShape, IShape
 from scite.cs_design.reinforcement import ReinforcementLayout
+from scite.cs_design.shapes import IShape, RectangularShape, TShape
 from scite.matmod.ec2_concrete import EC2Concrete
 
 

@@ -6,7 +6,9 @@ integrating with material models from Phase 1 (matmod).
 """
 
 from __future__ import annotations
-from typing import Optional, List, Any, Union
+
+from typing import Any, List, Optional, Union
+
 import numpy as np
 import numpy.typing as npt
 from pydantic import field_validator
