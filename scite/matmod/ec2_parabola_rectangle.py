@@ -166,20 +166,24 @@ class EC2ParabolaRectangle(BMCSModel):
         eps_cu2 = sp.Float(self.eps_cu2_computed)
         
         # EC2 parabola-rectangle curve (Section 3.1.7)
-        # η = ε / ε_c2
-        # σ = f_cd × [1 - (1 - η)^n]  for ε_cu2 ≤ ε ≤ ε_c2
-        # σ = f_cd                    for ε_c2 ≤ ε ≤ 0
+        # Starting from ε = 0 going into compression (negative ε):
+        # 1. From 0 to ε_c2: Parabolic ascending branch
+        # 2. From ε_c2 to ε_cu2: Rectangular plateau (constant stress)
+        # 3. Beyond ε_cu2: Zero (crushing failure)
+        #
+        # Note: ε_c2 = -0.002, ε_cu2 = -0.0035, so ε_cu2 < ε_c2 < 0
         
+        # Parabolic formula: σ = f_cd × [1 - (1 - η)^n] where η = ε / ε_c2
         eta = eps / eps_c2
         sig_parabola = f_cd * (1 - (1 - eta) ** n)
         
         # Complete stress-strain curve
         # Convention: compression is negative strain/stress
         sig = sp.Piecewise(
-            (0, eps < eps_cu2),              # Beyond ultimate compression
-            (-sig_parabola, eps < eps_c2),   # Parabolic branch (negative stress)
-            (-f_cd, eps < 0),                # Rectangular plateau (negative stress)
-            (0, True)                        # Tension: zero stress
+            (0, eps < eps_cu2),              # Beyond ultimate (ε < -0.0035)
+            (-f_cd, eps < eps_c2),           # Plateau (from -0.0035 to -0.002)
+            (-sig_parabola, eps < 0),        # Parabola (from -0.002 to 0)
+            (0, True)                        # Tension (ε ≥ 0)
         )
         
         return SymbolicExpression(
