@@ -65,7 +65,7 @@ def get_cross_section_from_state():
     
     shape = create_shape_from_params()
     
-    # Get concrete - use design strength
+    # Get concrete
     concrete_class = st.session_state.get('cs_concrete_selected', 'C30/37')
     try:
         f_ck = int(concrete_class.split('/')[0][1:])
@@ -89,9 +89,6 @@ def render_nm_assessment_view():
     st.markdown("""
     **Normal Force - Moment Assessment**  
     Manually adjust steel strain (ε_s1) to explore equilibrium under combined N-M loading.
-    
-    ⚠️ **Note:** Currently using characteristic material strengths (f_ck). For design, 
-    material models should use design strengths (f_cd = f_ck/γ_c, f_yd = f_yk/γ_s).
     """)
     
     try:
