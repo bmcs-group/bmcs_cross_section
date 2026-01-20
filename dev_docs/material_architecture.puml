@@ -8,6 +8,35 @@ skinparam shadowing false
 
 title Material Model Architecture - Component Overview
 
+' ===== Use Case Context (Determines Safety Level) =====
+class AssessmentContext <<Context>> #E1F5FE {
+    + use_case: UseCase
+    + default_strength_level: str
+    --
+    + get_strength_level(): str
+}
+
+enum UseCase {
+    ULS_DESIGN
+    SLS_VERIFICATION
+    TEACHING
+    CALIBRATION
+    PREDICTION
+}
+
+note right of AssessmentContext
+  <b>User's Entry Point</b>
+  
+  Use case determines safety level:
+  - ULS → 'design' (f_cd, f_yd)
+  - SLS → 'characteristic' (f_ck, f_uk)
+  - TEACHING → user selects
+  - CALIBRATION → 'mean' (f_cm)
+  - PREDICTION → 'mean' (f_cm)
+  
+  User can override default if needed
+end note
+
 ' ===== Base Material Model Interface =====
 abstract class MaterialModel <<interface>> #EEEEEE {
     + constitutive_eq: SymbolicExpression
@@ -25,19 +54,58 @@ note right of MaterialModel
   - Support plotting
 end note
 
-' ===== Products =====
+' ===== Products with Model Registry =====
 class ConcreteProduct <<Product>> #E8F5E9 {
     + grade: str
     + f_ck: float
-    + create_concrete_model()
+    + density: float
+    --
+    + AVAILABLE_MODELS: dict
+    --
+    + create_model(type, context)
+    + list_available_models(): list
 }
+
+note left of ConcreteProduct
+  <b>Model Registry Pattern</b>
+  
+  AVAILABLE_MODELS = {
+    'parabola_rectangle': ConcreteParabolaAdapter,
+    'bilinear': ConcreteBilinearAdapter,
+    'parabola_drop': ConcreteParabolaDropAdapter
+  }
+  
+  Example:
+  product = ConcreteProduct("C30/37")
+  context = AssessmentContext(UseCase.ULS_DESIGN)
+  model = product.create_model('parabola_rectangle', context)
+end note
 
 class SteelProduct <<Product>> #E8F5E9 {
     + grade: str
-    + f_yk: float
-    + f_su: float
-    + create_model()
+    + f_uk: float
+    + f_tk: float
+    + E_s: float
+    --
+    + AVAILABLE_MODELS: dict
+    --
+    + create_model(type, context)
+    + list_available_models(): list
 }
+
+note left of SteelProduct
+  <b>Model Registry Pattern</b>
+  
+  AVAILABLE_MODELS = {
+    'bilinear': SteelBilinearAdapter,
+    'bilinear_hardening': SteelBilinearHardeningAdapter
+  }
+  
+  Example:
+  product = SteelProduct("B500B")
+  context = AssessmentContext(UseCase.ULS_DESIGN)
+  model = product.create_model('bilinear_hardening', context)
+end note
 
 ' ===== Product Adapters =====
 abstract class ProductAdapter <<Adapter>> #FFF3E0 {
@@ -74,6 +142,7 @@ class EC2ParabolaRectangle <<Model>> #E3F2FD {
     + f_ck: float
     + n: float
     + eps_c1: float
+    + eps_cu1: float
 }
 
 class EC2Bilinear <<Model>> #E3F2FD {
@@ -104,23 +173,26 @@ class FiberTension <<Model>> #E3F2FD {
 
 ' ===== Steel Material Models =====
 class BilinearSteel <<Model>> #E3F2FD {
-    + f_yk: float
+    + f_uk: float
     + E_s: float
     + eps_y: float
+    + eps_u: float
 }
 
 note right of BilinearSteel
   <b>Elastic-Perfectly-Plastic</b>
   
   σ = E_s·ε  (ε ≤ ε_y)
-  σ = f_y     (ε > ε_y)
+  σ = f_y     (ε_y < ε ≤ ε_u)
+  σ = 0       (ε > ε_u)
   
+  f_uk = characteristic strength
   No strain hardening
 end note
 
 class BilinearSteelHardening <<Model>> #E3F2FD {
-    + f_yk: float
-    + f_su: float
+    + f_uk: float
+    + f_tk: float
     + E_s: float
     + E_sh: float
     + eps_y: float
@@ -130,11 +202,12 @@ class BilinearSteelHardening <<Model>> #E3F2FD {
 note right of BilinearSteelHardening
   <b>Elastic-Plastic-Hardening</b>
   
-  σ = E_s·ε      (ε ≤ ε_y)
-  σ = f_sy + E_sh·(ε-ε_y)  (ε_y < ε ≤ ε_u)
+  σ = E_s·ε               (ε ≤ ε_y)
+  σ = f_y + E_sh·(ε-ε_y)  (ε_y < ε ≤ ε_u)
   
-  f_sy = yield strength
-  f_su = ultimate strength
+  f_uk = characteristic yield
+  f_tk = characteristic ultimate
+  E_sh = hardening modulus
 end note
 
 ' ===== Safety Adapters =====
@@ -166,7 +239,7 @@ class SAFETY_FACTORS <<Dictionary>> #FFF9C4 {
 note left of SAFETY_FACTORS
   <b>Only safety coefficients!</b>
   
-  Material strengths (f_ck, f_yk)
+  Material strengths (f_ck, f_uk)
   come from product.
   
   Contains:
@@ -215,8 +288,12 @@ SafetyAdapter <|-- ConcreteTensionSafety
 SafetyAdapter <|-- SteelSafety
 
 ' ===== Association Relationships =====
-ConcreteProduct ..> ProductAdapter : <<creates>>
-SteelProduct ..> ProductAdapter : <<creates>>
+AssessmentContext *-- UseCase : defines
+AssessmentContext ..> ConcreteProduct : <<provides context to>>
+AssessmentContext ..> SteelProduct : <<provides context to>>
+
+ConcreteProduct ..> ProductAdapter : <<registry lookup>>
+SteelProduct ..> ProductAdapter : <<registry lookup>>
 
 ConcreteParabolaAdapter ..> EC2ParabolaRectangle : <<builds>>
 ConcreteBilinearAdapter ..> EC2Bilinear : <<builds>>
@@ -230,6 +307,7 @@ BilinearSteel ..> SafetyAdapter : <<wrapped by>>
 BilinearSteelHardening ..> SafetyAdapter : <<wrapped by>>
 
 SafetyAdapter ..> SAFETY_FACTORS : <<uses>>
+SafetyAdapter ..> AssessmentContext : <<reads strength_level from>>
 
 EC2Concrete *-- CompressionLaw : composes
 EC2Concrete *-- TensionLaw : composes
