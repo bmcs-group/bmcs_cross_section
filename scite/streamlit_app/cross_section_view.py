@@ -9,23 +9,17 @@ Can be run standalone for testing:
     streamlit run -m bmcs_cross_section.streamlit_app.cross_section_view
 """
 
-import streamlit as st
 import matplotlib.pyplot as plt
 import numpy as np
+import streamlit as st
 
-from scite.cs_design import (
-    RectangularShape, TShape, IShape,
-    BarReinforcement, LayerReinforcement, AreaReinforcement,
-    ReinforcementLayout, CrossSection
-)
-from scite.cs_components import (
-    SteelRebarComponent,
-    CarbonBarComponent,
-    TextileReinforcementComponent,
-    get_concrete_by_class,
-    get_catalog_manager,
-)
-from scite.matmod import create_steel, create_carbon
+from scite.cs_components import (CarbonBarComponent, SteelRebarComponent,
+                                 TextileReinforcementComponent,
+                                 get_catalog_manager, get_concrete_by_class)
+from scite.cs_design import (AreaReinforcement, BarReinforcement, CrossSection,
+                             IShape, LayerReinforcement, RectangularShape,
+                             ReinforcementLayout, TShape)
+from scite.matmod import create_carbon, create_steel
 
 
 def get_catalog_manager_cached():
@@ -464,7 +458,8 @@ def render_cross_section_view():
             
             # Concrete material selection
             from scite.cs_components import get_catalog_manager
-            from scite.matmod.ec2_concrete import EC2Concrete
+            from scite.matmod.ec2_parabola_rectangle import \
+                EC2ParabolaRectangle
             
             catalog_manager = get_catalog_manager()
             concrete_catalog = catalog_manager.get_concrete_catalog()
@@ -482,7 +477,11 @@ def render_cross_section_view():
             
             # Get concrete properties
             selected_row = concrete_catalog[concrete_catalog['strength_class'] == grade].iloc[0]
-            concrete = EC2Concrete(f_ck=float(selected_row['f_ck']))
+            concrete = EC2ParabolaRectangle(
+                f_ck=float(selected_row['f_ck']),
+                alpha_cc=0.85,
+                gamma_c=1.5
+            )
             
             # Display properties in colored frame
             st.markdown(f"""

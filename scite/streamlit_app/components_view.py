@@ -9,16 +9,14 @@ Can be run standalone for testing:
     streamlit run -m bmcs_cross_section.streamlit_app.components_view
 """
 
-import streamlit as st
 import matplotlib.pyplot as plt
-from scite.cs_components import (
-    get_catalog_manager,
-    SteelRebarComponent,
-    CarbonBarComponent,
-    TextileReinforcementComponent,
-    ConcreteComponent,
-)
-from scite.matmod.ec2_concrete import EC2Concrete
+import streamlit as st
+
+from scite.cs_components import (CarbonBarComponent, ConcreteComponent,
+                                 SteelRebarComponent,
+                                 TextileReinforcementComponent,
+                                 get_catalog_manager)
+from scite.matmod.ec2_parabola_rectangle import EC2ParabolaRectangle
 
 
 def get_catalog_manager_cached():

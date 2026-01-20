@@ -10,8 +10,8 @@ for imposed design loads (N_Ed, M_Ed).
 Inherits all visualization from StressStrainProfile - no redundancy.
 """
 
-import streamlit as st
 import matplotlib.pyplot as plt
+import streamlit as st
 
 from scite.cs_design import CrossSection
 from scite.nm_assess import NMAssessment
@@ -24,7 +24,7 @@ def get_cross_section_hash(cs):
     """
     import hashlib
     import json
-    
+
     # Collect all relevant parameters
     cs_data = {
         'shape': {
@@ -56,11 +56,9 @@ def get_cross_section_hash(cs):
 
 def get_cross_section_from_state():
     """Build CrossSection from session state (from cross_section_view)"""
+    from scite.matmod.ec2_parabola_rectangle import EC2ParabolaRectangle
     from scite.streamlit_app.cross_section_view import (
-        create_shape_from_params,
-        build_reinforcement_from_layers
-    )
-    from scite.matmod import EC2Concrete
+        build_reinforcement_from_layers, create_shape_from_params)
     
     if 'cs_shape_params' not in st.session_state:
         return None
@@ -71,9 +69,9 @@ def get_cross_section_from_state():
     concrete_class = st.session_state.get('cs_concrete_selected', 'C30/37')
     try:
         f_ck = int(concrete_class.split('/')[0][1:])
-        concrete = EC2Concrete(f_ck=f_ck)
+        concrete = EC2ParabolaRectangle(f_ck=f_ck, alpha_cc=0.85, gamma_c=1.5)
     except:
-        concrete = EC2Concrete(f_ck=30)
+        concrete = EC2ParabolaRectangle(f_ck=30, alpha_cc=0.85, gamma_c=1.5)
     
     reinforcement = build_reinforcement_from_layers()
     

@@ -21,7 +21,7 @@ from matplotlib.patches import Rectangle as MPLRectangle
 from scite.core import BMCSModel, ui_field
 from scite.cs_design.reinforcement import ReinforcementLayout
 from scite.cs_design.shapes import IShape, RectangularShape, TShape
-from scite.matmod.ec2_concrete import EC2Concrete
+from scite.matmod.ec2_parabola_rectangle import EC2ParabolaRectangle
 
 
 def to_scalar(val):
@@ -52,13 +52,13 @@ class CrossSection(BMCSModel):
     
     Attributes:
         shape: Geometric shape (RectangularShape, TShape, IShape)
-        concrete: Concrete material model (EC2Concrete)
+        concrete: Concrete material model (EC2ParabolaRectangle)
         reinforcement: Reinforcement layout (ReinforcementLayout)
         n_points: Number of discretization points for integration
     """
     
     shape: RectangularShape | TShape | IShape
-    concrete: EC2Concrete
+    concrete: EC2ParabolaRectangle
     reinforcement: ReinforcementLayout
     
     n_points: int = ui_field(
@@ -75,7 +75,7 @@ class CrossSection(BMCSModel):
     def model_post_init(self, __context) -> None:
         """Initialize with defaults if needed."""
         if self.concrete is None:
-            self.concrete = EC2Concrete()
+            self.concrete = EC2ParabolaRectangle(f_ck=30.0, alpha_cc=0.85, gamma_c=1.5)
         if self.reinforcement is None:
             self.reinforcement = ReinforcementLayout()
     

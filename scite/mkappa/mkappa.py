@@ -12,11 +12,12 @@ Approach:
 Uses conventions from cs_design and cs_components modules.
 """
 
-from typing import Tuple, Optional
+from typing import Optional, Tuple
+
+import matplotlib.pyplot as plt
 import numpy as np
 import numpy.typing as npt
 from scipy.optimize import brentq
-import matplotlib.pyplot as plt
 
 from scite.core import BMCSModel, ui_field
 from scite.cs_design.cross_section import CrossSection
@@ -328,16 +329,17 @@ def create_default_mkappa() -> MKappaAnalysis:
     Returns:
         MKappaAnalysis with rectangular section and standard reinforcement
     """
+    from scite.cs_design.reinforcement import (ReinforcementLayer,
+                                               ReinforcementLayout)
     from scite.cs_design.shapes import RectangularShape
-    from scite.cs_design.reinforcement import ReinforcementLayout, ReinforcementLayer
-    from scite.matmod.ec2_concrete import EC2Concrete
+    from scite.matmod.ec2_parabola_rectangle import EC2ParabolaRectangle
     from scite.matmod.steel_reinforcement import SteelReinforcement
-    
+
     # Create rectangular section 300x500 mm
     shape = RectangularShape(b=300.0, h=500.0)
     
-    # C30/37 concrete
-    concrete = EC2Concrete(f_ck=30.0)
+    # C30/37 concrete (design values)
+    concrete = EC2ParabolaRectangle(f_ck=30.0, alpha_cc=0.85, gamma_c=1.5)
     
     # Steel reinforcement: 4Ø20 at bottom (z=50mm), 2Ø16 at top (z=450mm)
     steel_mat = SteelReinforcement(f_sy=500.0)

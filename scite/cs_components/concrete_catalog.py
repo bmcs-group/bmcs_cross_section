@@ -5,12 +5,13 @@ Standard concrete grades according to Eurocode 2.
 Provides catalog of common ready-mix concrete strength classes.
 """
 
-import pandas as pd
 from dataclasses import dataclass
-from typing import Optional, Any
+from typing import Any, Optional
+
+import pandas as pd
 
 from scite.cs_components.component_base import ConcreteComponent
-from scite.matmod.ec2_concrete import EC2Concrete
+from scite.matmod.ec2_parabola_rectangle import EC2ParabolaRectangle
 
 
 def create_concrete_catalog(use_cache: bool = True) -> pd.DataFrame:
@@ -64,8 +65,8 @@ def create_concrete_catalog(use_cache: bool = True) -> pd.DataFrame:
     for strength_class, f_ck, f_ck_cube, f_cm, E_cm in concrete_grades:
         product_id = f"CONCRETE-EC2-{strength_class}"
         
-        # Create component with material model
-        matmod = EC2Concrete(f_ck=f_ck)
+        # Create component with material model (design values)
+        matmod = EC2ParabolaRectangle(f_ck=f_ck, alpha_cc=0.85, gamma_c=1.5)
         
         component = ConcreteComponent(
             product_id=product_id,

@@ -5,12 +5,13 @@ Provides persistent storage and lazy loading of component catalogs.
 Mimics object-oriented database pattern with cached instances.
 """
 
-import json
-import pandas as pd
-from pathlib import Path
-from typing import Dict, Optional, Any, List
-from datetime import datetime
 import hashlib
+import json
+from datetime import datetime
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+
+import pandas as pd
 
 
 class CatalogManager:
@@ -249,9 +250,8 @@ class CatalogManager:
         if force_refresh:
             self.invalidate_catalog('steel_rebars')
         
-        from scite.cs_components.steel_rebars import (
-            create_steel_rebar_catalog
-        )
+        from scite.cs_components.steel_rebars import create_steel_rebar_catalog
+
         # Pass use_cache=False to avoid infinite recursion
         return self._get_or_create_catalog(
             'steel_rebars', 
@@ -271,9 +271,7 @@ class CatalogManager:
         if force_refresh:
             self.invalidate_catalog('carbon_bars')
         
-        from scite.cs_components.carbon_bars import (
-            create_carbon_bar_catalog
-        )
+        from scite.cs_components.carbon_bars import create_carbon_bar_catalog
         return self._get_or_create_catalog(
             'carbon_bars', 
             lambda: create_carbon_bar_catalog(use_cache=False)
@@ -292,9 +290,7 @@ class CatalogManager:
         if force_refresh:
             self.invalidate_catalog('textile_products')
         
-        from scite.cs_components.textile_products import (
-            create_textile_catalog
-        )
+        from scite.cs_components.textile_products import create_textile_catalog
         return self._get_or_create_catalog(
             'textile_products', 
             lambda: create_textile_catalog(use_cache=False)
@@ -313,9 +309,8 @@ class CatalogManager:
         if force_refresh:
             self.invalidate_catalog('concrete')
         
-        from scite.cs_components.concrete_catalog import (
+        from scite.cs_components.concrete_catalog import \
             create_concrete_catalog
-        )
         return self._get_or_create_catalog(
             'concrete', 
             lambda: create_concrete_catalog(use_cache=False)
@@ -341,9 +336,9 @@ class CatalogManager:
         
         # Recreate component from cached data
         from scite.cs_components.concrete_catalog import ConcreteComponent
-        from scite.matmod.ec2_concrete import EC2Concrete
+        from scite.matmod.ec2_parabola_rectangle import EC2ParabolaRectangle
         
-        matmod = EC2Concrete(f_ck=row['f_ck'])
+        matmod = EC2ParabolaRectangle(f_ck=row['f_ck'], alpha_cc=0.85, gamma_c=1.5)
         
         return ConcreteComponent(
             product_id=row['product_id'],
