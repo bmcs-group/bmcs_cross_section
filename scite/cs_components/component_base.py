@@ -232,8 +232,9 @@ class ConcreteComponent:
         """Get design stress-strain curve for concrete (using f_cd)."""
         if self.matmod is None:
             return np.zeros_like(eps)
-        # Use matmod's get_sig method with design strength factor
-        return self.matmod.get_sig(eps) * (self.f_cd / self.f_cm) if self.f_cm > 0 else np.zeros_like(eps)
+        # EC2ParabolaRectangle already returns design stress based on f_cd
+        # No scaling needed - use matmod directly
+        return self.matmod.get_sig(eps)
     
     def get_characteristic_stress_strain(self, eps: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
         """Get characteristic stress-strain curve for concrete (using f_ck)."""
