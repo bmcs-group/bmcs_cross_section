@@ -338,7 +338,7 @@ class CatalogManager:
         from scite.cs_components.concrete_catalog import ConcreteComponent
         from scite.matmod.ec2_parabola_rectangle import EC2ParabolaRectangle
         
-        matmod = EC2ParabolaRectangle(f_ck=row['f_ck'], alpha_cc=0.85, gamma_c=1.5)
+        matmod = EC2ParabolaRectangle(f_ck=row['f_ck'], alpha_cc=1.0, gamma_c=1.5)
         
         return ConcreteComponent(
             product_id=row['product_id'],

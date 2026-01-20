@@ -75,7 +75,7 @@ class CrossSection(BMCSModel):
     def model_post_init(self, __context) -> None:
         """Initialize with defaults if needed."""
         if self.concrete is None:
-            self.concrete = EC2ParabolaRectangle(f_ck=30.0, alpha_cc=0.85, gamma_c=1.5)
+            self.concrete = EC2ParabolaRectangle(f_ck=30.0, alpha_cc=1.0, gamma_c=1.5)
         if self.reinforcement is None:
             self.reinforcement = ReinforcementLayout()
     

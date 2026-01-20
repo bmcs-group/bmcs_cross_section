@@ -113,7 +113,7 @@ def render_components_view():
         # Create component with design values
         concrete_matmod = EC2ParabolaRectangle(
             f_ck=float(selected_row['f_ck']),
-            alpha_cc=0.85,
+            alpha_cc=1.0,
             gamma_c=1.5
         )
         component = ConcreteComponent(

@@ -69,9 +69,9 @@ def get_cross_section_from_state():
     concrete_class = st.session_state.get('cs_concrete_selected', 'C30/37')
     try:
         f_ck = int(concrete_class.split('/')[0][1:])
-        concrete = EC2ParabolaRectangle(f_ck=f_ck, alpha_cc=0.85, gamma_c=1.5)
+        concrete = EC2ParabolaRectangle(f_ck=f_ck, alpha_cc=1.0, gamma_c=1.5)
     except:
-        concrete = EC2ParabolaRectangle(f_ck=30, alpha_cc=0.85, gamma_c=1.5)
+        concrete = EC2ParabolaRectangle(f_ck=30, alpha_cc=1.0, gamma_c=1.5)
     
     reinforcement = build_reinforcement_from_layers()
     
