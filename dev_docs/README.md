@@ -1,78 +1,103 @@
 # Developer Documentation
 
-**Last Updated**: January 10, 2026  
-**Current Phase**: Phase 2 - Cross-Section Design
+**Last Updated**: January 20, 2026  
+**Current Phase**: Material Architecture Strategy
 
 ## 📁 Directory Structure
 
 ```
 dev_docs/
-├── README.md                          ← You are here
-├── REVISED_STRATEGY.md                ← Current refactoring strategy
-├── bmcs_utils_dependency_analysis.md  ← Technical reference
-├── phase_1_core_and_matmod/          ← ✅ COMPLETED
-├── phase_2_cs_design/                ← 🔄 CURRENT WORK
-├── phase_3_mkappa/                   ← 📋 NEXT
-└── validation/                       ← Test results
+├── README.md                                ← You are here
+├── MATERIAL_ARCHITECTURE_STRATEGY.md        ← 🎯 ACTIVE PLANNING
+├── DOCKER_DEPLOYMENT.md                     ← Server deployment guide
+├── strategic/                              ← Strategic planning docs
+│   ├── MATERIAL_STRENGTH_MAPPING_ARCHITECTURE.md
+│   └── STATE_MANAGEMENT_STRATEGY.md
+├── archive/                                ← Historical documentation
+│   ├── completed/                          ← Finished work logs
+│   └── planning/                           ← Past planning docs
+├── phase_1_core_and_matmod/               ← ✅ COMPLETED
+├── phase_2_cs_design/                     ← ✅ COMPLETED
+├── phase_3_mkappa/                        ← 📋 PLANNED
+└── validation/                            ← Test results
 ```
 
 ## 🎯 Current Status
 
 ### ✅ Phase 1: Core Module & Material Models (COMPLETED)
-
-**Duration**: 5 days (January 6-10, 2026)
-
-**Deliverables**:
 - Core module with BMCSModel, SymbolicExpression, UI adapters
-- EC2 Concrete model (modern implementation)
-- Steel reinforcement model (modern implementation)
-- Interactive Jupyter notebooks with widgets
-- Streamlit web applications (concrete and steel)
-- Validation against legacy implementations
+- EC2 Concrete model, Steel reinforcement model, Carbon reinforcement model
+- Interactive Jupyter notebooks and Streamlit apps
+- **Location**: `phase_1_core_and_matmod/`
 
-**Location**: `phase_1_core_and_matmod/`
+### ✅ Phase 2: Cross-Section Design (COMPLETED)
+- Geometric shapes (RectangularShape, TShape, IShape)
+- Reinforcement layers with catalog integration
+- Cross-section assembly with `get_N_M(kappa, eps_bottom)` interface
+- Component catalog system (steel rebars, carbon bars, textiles)
+- Full Streamlit application with 6-step workflow
+- **Location**: `phase_2_cs_design/`
 
-### 🔄 Phase 2: Cross-Section Design (CURRENT)
+### 🎯 Current Focus: Material Architecture Strategy
 
-**Goal**: Refactor cs_design to use modern matmod
+**Goal**: Design triangle of Product - Material Model - Safety - Use Case
 
-**Why This Phase**: cs_design is used by mkappa, so it must come first
+**Key Topics**:
+1. **Concrete Model Decomposition**: Separate compression/tension laws
+2. **Strength Level Semantics**: Mean, characteristic, design values
+3. **Use-Case Contexts**: ULS design, SLS verification, teaching, research
+4. **Safety Factor Application**: Where and when to apply γ_c, γ_s, α_cc
 
-**Key Components**:
-1. Geometric shapes (RectangularShape, TShape, IShape)
-2. Reinforcement layers (with material model integration)
-3. Cross-section assembly (combines shape + materials)
-4. `get_N_M(kappa, eps_top)` interface for mkappa
+**Why Now**: 
+- Current concrete model uses hidden mean values
+- No clear use-case differentiation (ULS vs SLS vs teaching)
+- Need systematic approach before mkappa phase
 
-**Location**: `phase_2_cs_design/`
+**Document**: `MATERIAL_ARCHITECTURE_STRATEGY.md`
 
-### 📋 Phase 3: Moment-Curvature Analysis (NEXT)
-
-**Goal**: Refactor mkappa to use modern cs_design
-
-**Location**: `phase_3_mkappa/`
+### 📋 Phase 3: Moment-Curvature Analysis (PLANNED)
+- Refactor mkappa to use modern cs_design
+- Apply material architecture strategy
+- **Location**: `phase_3_mkappa/`
 
 ## 📖 Key Documents
 
-### 1. REVISED_STRATEGY.md (READ THIS FIRST!)
+### 1. MATERIAL_ARCHITECTURE_STRATEGY.md (READ FIRST! 🎯)
 
-The current, correct refactoring strategy based on dependency analysis.
+Active strategic planning for material model architecture.
 
-**Key Points**:
-- Dependency chain: matmod → cs_design → mkappa → mxn
-- Phase 1 (matmod): ✅ Complete
-- Phase 2 (cs_design): 🔄 Current priority
-- Phase 3 (mkappa): 📋 Next
-- Why the order matters (dependency flow)
+**Addresses**:
+- Product-Material-Safety-UseCase triangle
+- Concrete model decomposition (compression + tension)
+- Strength level semantics (mean, characteristic, design)
+- Use-case contexts (ULS, SLS, teaching, research)
+- Implementation roadmap
 
-### 2. bmcs_utils_dependency_analysis.md (REFERENCE)
+**Why Important**: Foundation for next development phase
 
-Technical analysis of bmcs_utils usage across the codebase.
+### 2. DOCKER_DEPLOYMENT.md (OPERATIONAL)
 
-**Use when**:
-- Understanding legacy code patterns
-- Finding bmcs_utils features to replace
-- Planning refactoring of specific modules
+Server deployment guide for SCITE Streamlit app.
+
+**Content**:
+- systemd service configuration
+- Environment setup (matching local dev)
+- Deployment workflow
+- Troubleshooting
+
+### 3. Strategic Planning Documents
+
+**Location**: `strategic/`
+
+- **MATERIAL_STRENGTH_MAPPING_ARCHITECTURE.md**: Deep dive into assessment contexts
+- **STATE_MANAGEMENT_STRATEGY.md**: Streamlit app state handling patterns
+
+### 4. Archive (Historical Reference)
+
+**Location**: `archive/`
+
+- **`completed/`**: Finished work logs (cleanup, refactoring completion)
+- **`planning/`**: Past planning docs (original strategy, dependency analysis)
 
 ## 🚀 Quick Start for Contributors
 
