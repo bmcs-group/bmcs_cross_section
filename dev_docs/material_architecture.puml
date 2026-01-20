@@ -1,0 +1,423 @@
+@startuml Material Model Architecture - Detailed View
+
+!theme blueprint
+skinparam backgroundColor #FAFAFA
+skinparam componentStyle rectangle
+
+!define PRODUCT #E8F5E9
+!define ADAPTER #FFF3E0
+!define MODEL #E3F2FD
+!define SAFETY #F3E5F5
+!define COMPOSED #FCE4EC
+
+' ============================================
+' Component Products (Catalog Data)
+' ============================================
+package "Component Products\n(Catalog Data)" PRODUCT {
+    
+    class ConcreteProduct <<catalog>> {
+        --Characteristics--
+        + grade: str = "C30/37"
+        + f_ck: float = 30.0 MPa
+        + density: float = 2400 kg/m³
+        + certification: str
+        --Model Registry--
+        + AVAILABLE_MODELS: dict
+        + AVAILABLE_TENSIONS: dict
+        --Factory Methods--
+        + create_compression_model(type, level)
+        + create_tension_model(type, level)
+        + create_concrete_model(comp, tens, level)
+    }
+    
+    class SteelProduct <<catalog>> {
+        --Characteristics--
+        + grade: str = "B500B"
+        + f_yk: float = 500.0 MPa
+        + diameter: float = 12.0 mm
+        + certification: str
+        --Model Registry--
+        + AVAILABLE_MODELS: dict
+        --Factory Methods--
+        + create_model(type, level)
+    }
+    
+    class CarbonProduct <<catalog>> {
+        --Characteristics--
+        + type: str = "CFRP"
+        + f_tk: float = 2400 MPa
+        + E_c: float = 165000 MPa
+        + area_per_width: float
+        --Model Registry--
+        + AVAILABLE_MODELS: dict
+        --Factory Methods--
+        + create_model(type, level)
+    }
+}
+
+' ============================================
+' Product Adapters (Parameter Extraction)
+' ============================================
+package "Product Adapters\n(Parameter Extraction)" ADAPTER {
+    
+    abstract class ProductAdapter <<abstract>> {
+        + product: Product
+        {abstract} + extract_params(): dict
+    }
+    
+    class ConcreteParabolaAdapter {
+        + product: ConcreteProduct
+        --Extraction Logic--
+        + extract_params(): dict
+        + get_f_ck(): float
+        + get_E_cm(): float
+        + get_eps_c1(): float
+        + get_n_exponent(): float
+    }
+    
+    class ConcreteBilinearAdapter {
+        + product: ConcreteProduct
+        --Extraction Logic--
+        + extract_params(): dict
+        + get_f_ck(): float
+        + get_E_c(): float
+        + get_eps_cu(): float
+    }
+    
+    class ConcreteParabolaDropAdapter {
+        + product: ConcreteProduct
+        --Extraction Logic--
+        + extract_params(): dict
+        + get_f_ck(): float
+        + get_E_cm(): float
+        + get_eps_c1(): float
+        + get_eps_cu(): float
+    }
+    
+    class SteelBilinearAdapter {
+        + product: SteelProduct
+        --Extraction Logic--
+        + extract_params(): dict
+        + get_f_yk(): float
+        + get_E_s(): float
+    }
+    
+    class CarbonLinearAdapter {
+        + product: CarbonProduct
+        --Extraction Logic--
+        + extract_params(): dict
+        + get_f_tk(): float
+        + get_E_c(): float
+    }
+    
+    ProductAdapter <|-- ConcreteParabolaAdapter
+    ProductAdapter <|-- ConcreteBilinearAdapter
+    ProductAdapter <|-- ConcreteParabolaDropAdapter
+    ProductAdapter <|-- SteelBilinearAdapter
+    ProductAdapter <|-- CarbonLinearAdapter
+}
+
+' ============================================
+' Material Model Variants (Constitutive Laws)
+' ============================================
+package "Material Model Variants\n(Constitutive Laws with Sympy)" MODEL {
+    
+    abstract class CompressionLaw <<abstract>> {
+        + f_ck: float
+        + constitutive_eq: SymbolicExpression
+        {abstract} + get_sig(eps): ndarray
+        {abstract} + get_latex(): str
+        + plot(ax, label)
+    }
+    
+    class EC2ParabolaRectangle {
+        + f_ck: float
+        + n: float
+        + eps_c1: float
+        + eps_cu1: float
+        --Sympy Equation--
+        + constitutive_eq: SymbolicExpression
+        --Methods--
+        + get_sig(eps): ndarray
+        + get_latex(): str
+        + _lambdified_func
+    }
+    
+    class EC2Bilinear {
+        + f_ck: float
+        + E_c: float
+        + eps_c1: float
+        + eps_cu: float
+        --Sympy Equation--
+        + constitutive_eq: SymbolicExpression
+        --Methods--
+        + get_sig(eps): ndarray
+        + get_latex(): str
+    }
+    
+    class EC2ParabolaDrop {
+        + f_ck: float
+        + n: float
+        + eps_c1: float
+        + eps_cu: float
+        --Sympy Equation--
+        + constitutive_eq: SymbolicExpression
+        --Methods--
+        + get_sig(eps): ndarray
+        + get_latex(): str
+    }
+    
+    abstract class TensionLaw <<abstract>> {
+        + f_ck: float
+        + constitutive_eq: SymbolicExpression
+        {abstract} + get_sig(eps): ndarray
+        {abstract} + get_latex(): str
+    }
+    
+    class LinearTension {
+        + f_ct: float
+        + E_ct: float
+        + eps_cr: float
+        --Sympy Equation--
+        + constitutive_eq: SymbolicExpression
+        --Methods--
+        + get_sig(eps): ndarray
+        + get_latex(): str
+    }
+    
+    class FiberTension {
+        + f_ct: float
+        + E_ct: float
+        + sigma_plateau: float
+        + eps_peak: float
+        --Sympy Equation--
+        + constitutive_eq: SymbolicExpression
+        --Methods--
+        + get_sig(eps): ndarray
+        + get_latex(): str
+    }
+    
+    class BilinearSteel {
+        + f_yk: float
+        + E_s: float
+        + eps_y: float
+        + eps_u: float
+        --Sympy Equation--
+        + constitutive_eq: SymbolicExpression
+        --Methods--
+        + get_sig(eps): ndarray
+        + get_latex(): str
+    }
+    
+    class CarbonLinear {
+        + f_tk: float
+        + E_c: float
+        + eps_u: float
+        --Sympy Equation--
+        + constitutive_eq: SymbolicExpression
+        --Methods--
+        + get_sig(eps): ndarray
+        + get_latex(): str
+    }
+    
+    CompressionLaw <|-- EC2ParabolaRectangle
+    CompressionLaw <|-- EC2Bilinear
+    CompressionLaw <|-- EC2ParabolaDrop
+    TensionLaw <|-- LinearTension
+    TensionLaw <|-- FiberTension
+}
+
+' ============================================
+' Safety Adapters (Context Transformation)
+' ============================================
+package "Safety Adapters\n(Strength Level Transformation)" SAFETY {
+    
+    abstract class SafetyAdapter <<abstract>> {
+        + model: MaterialModel
+        + strength_level: str
+        + safety_factors: dict
+        {abstract} + apply_factors()
+        {abstract} + get_adjusted_model()
+    }
+    
+    class ConcreteCompressionSafety {
+        + model: CompressionLaw
+        + strength_level: str
+        + f_ck: float
+        --Safety Factors--
+        + SAFETY_FACTORS['concrete_compression']
+        --Methods--
+        + apply_factors()
+        + get_adjusted_model(): CompressionLaw
+        + get_f_c(): float
+    }
+    
+    class ConcreteTensionSafety {
+        + model: TensionLaw
+        + strength_level: str
+        + f_ck: float
+        --Safety Factors--
+        + SAFETY_FACTORS['concrete_tension']
+        --Methods--
+        + apply_factors()
+        + get_adjusted_model(): TensionLaw
+        + get_f_ct(): float
+    }
+    
+    class SteelSafety {
+        + model: BilinearSteel
+        + strength_level: str
+        + f_yk: float
+        --Safety Factors--
+        + SAFETY_FACTORS['steel']
+        --Methods--
+        + apply_factors()
+        + get_adjusted_model(): BilinearSteel
+        + get_f_y(): float
+    }
+    
+    class CarbonSafety {
+        + model: CarbonLinear
+        + strength_level: str
+        + f_tk: float
+        --Safety Factors--
+        + SAFETY_FACTORS['carbon']
+        --Methods--
+        + apply_factors()
+        + get_adjusted_model(): CarbonLinear
+        + get_f_t(): float
+    }
+    
+    SafetyAdapter <|-- ConcreteCompressionSafety
+    SafetyAdapter <|-- ConcreteTensionSafety
+    SafetyAdapter <|-- SteelSafety
+    SafetyAdapter <|-- CarbonSafety
+}
+
+' ============================================
+' Composed Models (Material Assemblies)
+' ============================================
+package "Composed Models\n(Material Assemblies)" COMPOSED {
+    
+    class EC2Concrete {
+        + f_ck: float
+        + strength_level: str
+        --Components--
+        + compression: CompressionLaw
+        + tension: TensionLaw
+        --Methods--
+        + get_sig(eps): ndarray
+        + with_strength_level(level): EC2Concrete
+        + get_latex_documentation(): str
+        + plot_with_equations(ax)
+    }
+    
+    note right of EC2Concrete
+        <b>Composite Pattern</b>
+        
+        Combines:
+        - Compression law (ε < 0)
+        - Tension law (ε > 0)
+        
+        Can mix-and-match:
+        - Standard + Linear
+        - Parabola + Fiber
+        - Bilinear + Linear
+    end note
+}
+
+' ============================================
+' Safety Factors Dictionary (Sympy-based)
+' ============================================
+package "Safety Factors\n(Sympy Expressions)" SAFETY {
+    
+    object SAFETY_FACTORS {
+        'concrete_compression': {
+            'mean': f_ck + 8
+            'characteristic': f_ck
+            'design': 0.85·f_ck/1.5
+        }
+        'concrete_tension': {
+            'mean': 0.3·f_ck^(2/3)
+            'characteristic': 0.7·f_ctm
+            'design': f_ctm/1.5
+        }
+        'steel': {
+            'characteristic': f_yk
+            'design': f_yk/1.15
+        }
+        'carbon': {
+            'characteristic': f_tk
+            'design': f_tk/1.5
+        }
+    }
+    
+    note bottom of SAFETY_FACTORS
+        <b>Each entry is SymbolicExpression:</b>
+        
+        - expr: algebraic formula
+        - params: parameter dict
+        - latex_str: LaTeX rendering
+        
+        Used by SafetyAdapters to
+        compute adjusted strengths
+    end note
+}
+
+' ============================================
+' Relationships
+' ============================================
+
+' Products create Adapters
+ConcreteProduct ..> ConcreteParabolaAdapter : <<creates>>
+ConcreteProduct ..> ConcreteBilinearAdapter : <<creates>>
+ConcreteProduct ..> ConcreteParabolaDropAdapter : <<creates>>
+SteelProduct ..> SteelBilinearAdapter : <<creates>>
+CarbonProduct ..> CarbonLinearAdapter : <<creates>>
+
+' Adapters build Models
+ConcreteParabolaAdapter ..> EC2ParabolaRectangle : <<builds>>
+ConcreteBilinearAdapter ..> EC2Bilinear : <<builds>>
+ConcreteParabolaDropAdapter ..> EC2ParabolaDrop : <<builds>>
+ConcreteParabolaAdapter ..> LinearTension : <<builds>>
+ConcreteParabolaAdapter ..> FiberTension : <<builds>>
+SteelBilinearAdapter ..> BilinearSteel : <<builds>>
+CarbonLinearAdapter ..> CarbonLinear : <<builds>>
+
+' Safety Adapters wrap Models
+EC2ParabolaRectangle ..> ConcreteCompressionSafety : <<wrapped by>>
+EC2Bilinear ..> ConcreteCompressionSafety : <<wrapped by>>
+EC2ParabolaDrop ..> ConcreteCompressionSafety : <<wrapped by>>
+LinearTension ..> ConcreteTensionSafety : <<wrapped by>>
+FiberTension ..> ConcreteTensionSafety : <<wrapped by>>
+BilinearSteel ..> SteelSafety : <<wrapped by>>
+CarbonLinear ..> CarbonSafety : <<wrapped by>>
+
+' Safety Adapters use SAFETY_FACTORS
+ConcreteCompressionSafety ..> SAFETY_FACTORS : <<uses>>
+ConcreteTensionSafety ..> SAFETY_FACTORS : <<uses>>
+SteelSafety ..> SAFETY_FACTORS : <<uses>>
+CarbonSafety ..> SAFETY_FACTORS : <<uses>>
+
+' Composed Models contain Component Models
+EC2Concrete *-- CompressionLaw : composes
+EC2Concrete *-- TensionLaw : composes
+
+' ============================================
+' Usage Flow
+' ============================================
+note as N1
+<b>Usage Flow Example:</b>
+
+1. User selects: ConcreteProduct("C30/37")
+2. Product creates: ConcreteParabolaAdapter
+3. Adapter extracts: {f_ck: 30, E_cm: 32000, ...}
+4. Adapter builds: EC2ParabolaRectangle(f_ck=30)
+5. SafetyAdapter wraps: with strength_level='design'
+6. SafetyAdapter applies: f_cd = 0.85·30/1.5 = 17 MPa
+7. Returns: EC2ParabolaRectangle(f_ck=17) [adjusted]
+8. Composed: EC2Concrete(compression=..., tension=...)
+9. Used in: CrossSection for M-κ calculations
+end note
+
+@enduml
