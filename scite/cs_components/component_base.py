@@ -6,11 +6,12 @@ providing a common interface for standardized products with geometric
 properties, material behavior, and safety factors.
 """
 
+from abc import ABC, abstractmethod
+from dataclasses import dataclass
+from typing import Any, Dict, Optional
+
 import numpy as np
 import numpy.typing as npt
-from dataclasses import dataclass
-from typing import Optional, Dict, Any
-from abc import ABC, abstractmethod
 
 
 @dataclass
@@ -123,7 +124,7 @@ class ReinforcementComponent(ABC):
             Matplotlib axes object.
         """
         import matplotlib.pyplot as plt
-        
+
         # Create figure if no axes provided
         if ax is None:
             fig, ax = plt.subplots(figsize=(8, 6))
@@ -240,15 +241,17 @@ class ConcreteComponent:
         """Get characteristic stress-strain curve for concrete (using f_ck)."""
         if self.matmod is None:
             return np.zeros_like(eps)
-        # Scale matmod curve to characteristic strength
-        return self.matmod.get_sig(eps) * (self.f_ck / self.f_cm) if self.f_cm > 0 else np.zeros_like(eps)
+        # EC2ParabolaRectangle returns design stress (f_cd)
+        # Scale UP to characteristic strength: f_ck / f_cd = gamma_c / alpha_cc
+        return self.matmod.get_sig(eps) * (self.f_ck / self.f_cd) if self.f_cd > 0 else np.zeros_like(eps)
     
     def get_mean_stress_strain(self, eps: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
         """Get mean stress-strain curve for concrete (using f_cm)."""
         if self.matmod is None:
             return np.zeros_like(eps)
-        # Matmod is based on f_cm, so use it directly
-        return self.matmod.get_sig(eps)
+        # EC2ParabolaRectangle returns design stress (f_cd)
+        # Scale UP to mean strength: f_cm / f_cd
+        return self.matmod.get_sig(eps) * (self.f_cm / self.f_cd) if self.f_cd > 0 else np.zeros_like(eps)
     
     def plot_stress_strain(self, ax=None, eps_max=0.0035, n_points=100,
                           show_limits=True, color='blue', alpha_fill=0.15, **plot_kwargs):
