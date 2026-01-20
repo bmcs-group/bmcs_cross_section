@@ -8,6 +8,24 @@ skinparam shadowing false
 
 title Material Model Architecture - Component Overview
 
+' ===== Base Material Model Interface =====
+abstract class MaterialModel <<interface>> #EEEEEE {
+    + constitutive_eq: SymbolicExpression
+    {abstract} + get_sig(eps: ndarray): ndarray
+    {abstract} + get_latex(): str
+    + plot(ax, label)
+}
+
+note right of MaterialModel
+  <b>Core Interface</b>
+  
+  All material models must:
+  - Evaluate stress for given strain
+  - Provide LaTeX representation
+  - Support plotting
+end note
+
+' ===== Products =====
 class ConcreteProduct <<Product>> #E8F5E9 {
     + grade: str
     + f_ck: float
@@ -17,93 +35,203 @@ class ConcreteProduct <<Product>> #E8F5E9 {
 class SteelProduct <<Product>> #E8F5E9 {
     + grade: str
     + f_yk: float
+    + f_su: float
     + create_model()
 }
 
-abstract ProductAdapter <<Adapter>> #FFF3E0 {
-    {abstract} extract_params()
+' ===== Product Adapters =====
+abstract class ProductAdapter <<Adapter>> #FFF3E0 {
+    + product: Product
+    {abstract} + extract_params(): dict
 }
 
-class ConcreteParabolaAdapter <<Adapter>> #FFF3E0
-class ConcreteBilinearAdapter <<Adapter>> #FFF3E0
+class ConcreteParabolaAdapter <<Adapter>> #FFF3E0 {
+    + product: ConcreteProduct
+    + extract_params(): dict
+}
 
-abstract CompressionLaw <<Model>> #E3F2FD {
+class ConcreteBilinearAdapter <<Adapter>> #FFF3E0 {
+    + product: ConcreteProduct
+    + extract_params(): dict
+}
+
+class SteelBilinearAdapter <<Adapter>> #FFF3E0 {
+    + product: SteelProduct
+    + extract_params(): dict
+}
+
+class SteelBilinearHardeningAdapter <<Adapter>> #FFF3E0 {
+    + product: SteelProduct
+    + extract_params(): dict
+}
+
+' ===== Concrete Material Models =====
+abstract class CompressionLaw <<Model>> #E3F2FD {
     + f_ck: float
-    + constitutive_eq: SymbolicExpression
-    {abstract} get_sig(eps)
-    {abstract} get_latex()
 }
 
-class EC2ParabolaRectangle <<Model>> #E3F2FD
-class EC2Bilinear <<Model>> #E3F2FD
-class EC2ParabolaDrop <<Model>> #E3F2FD
-
-abstract TensionLaw <<Model>> #E3F2FD {
+class EC2ParabolaRectangle <<Model>> #E3F2FD {
     + f_ck: float
-    {abstract} get_sig(eps)
+    + n: float
+    + eps_c1: float
 }
 
-class LinearTension <<Model>> #E3F2FD
-class FiberTension <<Model>> #E3F2FD
+class EC2Bilinear <<Model>> #E3F2FD {
+    + f_ck: float
+    + E_c: float
+    + eps_cu: float
+}
 
-abstract SafetyAdapter <<Adapter>> #F3E5F5 {
+class EC2ParabolaDrop <<Model>> #E3F2FD {
+    + f_ck: float
+    + eps_c1: float
+    + eps_cu: float
+}
+
+abstract class TensionLaw <<Model>> #E3F2FD {
+    + f_ck: float
+}
+
+class LinearTension <<Model>> #E3F2FD {
+    + f_ct: float
+    + E_ct: float
+}
+
+class FiberTension <<Model>> #E3F2FD {
+    + f_ct: float
+    + sigma_plateau: float
+}
+
+' ===== Steel Material Models =====
+class BilinearSteel <<Model>> #E3F2FD {
+    + f_yk: float
+    + E_s: float
+    + eps_y: float
+}
+
+note right of BilinearSteel
+  <b>Elastic-Perfectly-Plastic</b>
+  
+  σ = E_s·ε  (ε ≤ ε_y)
+  σ = f_y     (ε > ε_y)
+  
+  No strain hardening
+end note
+
+class BilinearSteelHardening <<Model>> #E3F2FD {
+    + f_yk: float
+    + f_su: float
+    + E_s: float
+    + E_sh: float
+    + eps_y: float
+    + eps_u: float
+}
+
+note right of BilinearSteelHardening
+  <b>Elastic-Plastic-Hardening</b>
+  
+  σ = E_s·ε      (ε ≤ ε_y)
+  σ = f_sy + E_sh·(ε-ε_y)  (ε_y < ε ≤ ε_u)
+  
+  f_sy = yield strength
+  f_su = ultimate strength
+end note
+
+' ===== Safety Adapters =====
+abstract class SafetyAdapter <<Adapter>> #F3E5F5 {
+    + model: MaterialModel
     + strength_level: str
-    {abstract} get_adjusted_model()
+    {abstract} + get_adjusted_model(): MaterialModel
 }
 
-class ConcreteCompressionSafety <<Adapter>> #F3E5F5
-class ConcreteTensionSafety <<Adapter>> #F3E5F5
+class ConcreteCompressionSafety <<Adapter>> #F3E5F5 {
+    + apply_factors()
+}
 
+class ConcreteTensionSafety <<Adapter>> #F3E5F5 {
+    + apply_factors()
+}
+
+class SteelSafety <<Adapter>> #F3E5F5 {
+    + apply_factors()
+}
+
+' ===== Safety Factors Dictionary =====
 class SAFETY_FACTORS <<Dictionary>> #FFF9C4 {
     + concrete_compression
     + concrete_tension
     + steel
 }
 
-class EC2Concrete <<Composed>> #FCE4EC {
-    + compression: CompressionLaw
-    + tension: TensionLaw
-    + get_sig(eps)
-    + with_strength_level()
-}
-
-' Key relationships
-ConcreteProduct --> ConcreteParabolaAdapter : creates
-ConcreteParabolaAdapter --> EC2ParabolaRectangle : builds
-EC2ParabolaRectangle --> ConcreteCompressionSafety : wrapped by
-ConcreteCompressionSafety --> SAFETY_FACTORS : uses
-EC2Concrete *-- CompressionLaw
-EC2Concrete *-- TensionLaw
-
-ProductAdapter <|-- ConcreteParabolaAdapter
-ProductAdapter <|-- ConcreteBilinearAdapter
-CompressionLaw <|-- EC2ParabolaRectangle
-CompressionLaw <|-- EC2Bilinear
-CompressionLaw <|-- EC2ParabolaDrop
-TensionLaw <|-- LinearTension
-TensionLaw <|-- FiberTension
-SafetyAdapter <|-- ConcreteCompressionSafety
-SafetyAdapter <|-- ConcreteTensionSafety
-
-note bottom of SAFETY_FACTORS
+note left of SAFETY_FACTORS
   <b>Only safety coefficients!</b>
   
   Material strengths (f_ck, f_yk)
-  come from product, not here.
+  come from product.
   
-  SafetyAdapter injects product data:
-  safety_expr.get_value(f_ck=product.f_ck)
+  Contains:
+  - alpha_cc, gamma_c (concrete)
+  - gamma_s (steel)
 end note
 
-note right of EC2Concrete
+' ===== Composed Models =====
+class EC2Concrete <<Composed>> #FCE4EC {
+    + f_ck: float
+    + compression: CompressionLaw
+    + tension: TensionLaw
+    + strength_level: str
+    + with_strength_level(): EC2Concrete
+}
+
+note bottom of EC2Concrete
   <b>Composition Pattern</b>
   
-  Combines compression + tension
-  
-  Can mix-and-match:
-  - Parabola + Linear
-  - Parabola + Fiber
-  - Bilinear + Linear
+  get_sig(eps):
+    if eps < 0: compression.get_sig(eps)
+    if eps > 0: tension.get_sig(eps)
 end note
+
+' ===== Inheritance Relationships =====
+MaterialModel <|-- CompressionLaw
+MaterialModel <|-- TensionLaw
+MaterialModel <|-- BilinearSteel
+MaterialModel <|-- BilinearSteelHardening
+MaterialModel <|-- EC2Concrete
+
+CompressionLaw <|-- EC2ParabolaRectangle
+CompressionLaw <|-- EC2Bilinear
+CompressionLaw <|-- EC2ParabolaDrop
+
+TensionLaw <|-- LinearTension
+TensionLaw <|-- FiberTension
+
+ProductAdapter <|-- ConcreteParabolaAdapter
+ProductAdapter <|-- ConcreteBilinearAdapter
+ProductAdapter <|-- SteelBilinearAdapter
+ProductAdapter <|-- SteelBilinearHardeningAdapter
+
+SafetyAdapter <|-- ConcreteCompressionSafety
+SafetyAdapter <|-- ConcreteTensionSafety
+SafetyAdapter <|-- SteelSafety
+
+' ===== Association Relationships =====
+ConcreteProduct ..> ProductAdapter : <<creates>>
+SteelProduct ..> ProductAdapter : <<creates>>
+
+ConcreteParabolaAdapter ..> EC2ParabolaRectangle : <<builds>>
+ConcreteBilinearAdapter ..> EC2Bilinear : <<builds>>
+SteelBilinearAdapter ..> BilinearSteel : <<builds>>
+SteelBilinearHardeningAdapter ..> BilinearSteelHardening : <<builds>>
+
+EC2ParabolaRectangle ..> SafetyAdapter : <<wrapped by>>
+EC2Bilinear ..> SafetyAdapter : <<wrapped by>>
+LinearTension ..> SafetyAdapter : <<wrapped by>>
+BilinearSteel ..> SafetyAdapter : <<wrapped by>>
+BilinearSteelHardening ..> SafetyAdapter : <<wrapped by>>
+
+SafetyAdapter ..> SAFETY_FACTORS : <<uses>>
+
+EC2Concrete *-- CompressionLaw : composes
+EC2Concrete *-- TensionLaw : composes
 
 @enduml
