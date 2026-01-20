@@ -133,21 +133,25 @@ SAFETY_FACTORS = {
     'concrete_compression': {
         'mean': SymbolicExpression(
             expr='f_ck + 8',
-            params={'f_ck': 30},
-            latex_str=r'f_{cm} = f_{ck} + 8'
+            params={},  # f_ck comes from product!
+            latex_str=r'f_{cm} = f_{ck} + 8 \text{ MPa}'
         ),
         'characteristic': SymbolicExpression(
             expr='f_ck',
+            params={},  # f_ck comes from product!
             latex_str=r'f_{ck}'
         ),
         'design': SymbolicExpression(
             expr='alpha_cc * f_ck / gamma_c',
-            params={'alpha_cc': 0.85, 'gamma_c': 1.5},
+            params={'alpha_cc': 0.85, 'gamma_c': 1.5},  # Only safety factors!
             latex_str=r'f_{cd} = \alpha_{cc} \cdot \frac{f_{ck}}{\gamma_c}'
         ),
     },
     # ... more materials
 }
+
+# Usage: SafetyAdapter passes f_ck from product
+# f_adjusted = safety_expr.get_value(f_ck=self.product.f_ck)
 ```
 
 ### Benefits

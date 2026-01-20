@@ -700,50 +700,53 @@ SAFETY_FACTORS = {
     'concrete_compression': {
         'mean': SymbolicExpression(
             expr='f_ck + 8',
-            params={'f_ck': 30},
+            params={},  # f_ck comes from product!
             latex_str=r'f_{cm} = f_{ck} + 8 \text{ MPa}'
         ),
         'characteristic': SymbolicExpression(
             expr='f_ck',
-            params={'f_ck': 30},
+            params={},  # f_ck comes from product!
             latex_str=r'f_{ck}'
         ),
         'design': SymbolicExpression(
             expr='alpha_cc * f_ck / gamma_c',
-            params={'f_ck': 30, 'alpha_cc': 0.85, 'gamma_c': 1.5},
+            params={'alpha_cc': 0.85, 'gamma_c': 1.5},  # Only safety factors!
             latex_str=r'f_{cd} = \alpha_{cc} \cdot \frac{f_{ck}}{\gamma_c}'
         ),
     },
     'concrete_tension': {
         'mean': SymbolicExpression(
             expr='0.3 * f_ck**(2/3)',
-            params={'f_ck': 30},
+            params={},  # f_ck comes from product!
             latex_str=r'f_{ctm} = 0.3 \cdot f_{ck}^{2/3}'
         ),
         'characteristic': SymbolicExpression(
             expr='0.7 * 0.3 * f_ck**(2/3)',  # 5% fractile
-            params={'f_ck': 30},
+            params={},  # f_ck comes from product!
             latex_str=r'f_{ctk,0.05} = 0.7 \cdot f_{ctm}'
         ),
         'design': SymbolicExpression(
             expr='alpha_ct * 0.3 * f_ck**(2/3) / gamma_c',
-            params={'f_ck': 30, 'alpha_ct': 1.0, 'gamma_c': 1.5},
+            params={'alpha_ct': 1.0, 'gamma_c': 1.5},  # Only safety factors!
             latex_str=r'f_{ctd} = \alpha_{ct} \cdot \frac{f_{ctm}}{\gamma_c}'
         ),
     },
     'steel': {
         'characteristic': SymbolicExpression(
             expr='f_yk',
-            params={'f_yk': 500},
+            params={},  # f_yk comes from product!
             latex_str=r'f_{yk}'
         ),
         'design': SymbolicExpression(
             expr='f_yk / gamma_s',
-            params={'f_yk': 500, 'gamma_s': 1.15},
+            params={'gamma_s': 1.15},  # Only safety factor!
             latex_str=r'f_{yd} = \frac{f_{yk}}{\gamma_s}'
         ),
     }
 }
+
+# Note: Material strengths (f_ck, f_yk) are passed from product when evaluating:
+# safety_expr.get_value(f_ck=product.f_ck)  ← Product data injected here!
 ```
 
 **2. Base Compressive Law - Sympy Constitutive Equation:**
