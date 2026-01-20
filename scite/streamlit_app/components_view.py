@@ -110,8 +110,12 @@ def render_components_view():
         selected_idx = min(st.session_state.concrete_selected_idx, len(catalog) - 1)
         selected_row = catalog.iloc[selected_idx]
         
-        # Create component - EC2Concrete expects f_ck not f_cm
-        concrete_matmod = EC2Concrete(f_ck=float(selected_row['f_ck']))
+        # Create component with design values
+        concrete_matmod = EC2ParabolaRectangle(
+            f_ck=float(selected_row['f_ck']),
+            alpha_cc=0.85,
+            gamma_c=1.5
+        )
         component = ConcreteComponent(
             product_id=selected_row['product_id'],
             name=selected_row.get('name', selected_row['strength_class']),

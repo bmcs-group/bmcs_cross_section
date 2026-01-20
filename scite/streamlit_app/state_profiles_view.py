@@ -9,13 +9,13 @@ Can be run standalone for testing:
     streamlit run -m bmcs_cross_section.streamlit_app.state_profiles_view
 """
 
-import streamlit as st
 import matplotlib.pyplot as plt
 import numpy as np
+import streamlit as st
 
 from scite.cs_design import CrossSection
 from scite.cs_design.cs_stress_strain_profile import StressStrainProfile
-from scite.matmod import EC2Concrete
+from scite.matmod.ec2_parabola_rectangle import EC2ParabolaRectangle
 
 
 def get_reasonable_ranges():
@@ -53,7 +53,7 @@ def get_cross_section_hash(cs):
     """
     import hashlib
     import json
-    
+
     # Collect all relevant parameters
     cs_data = {
         'shape': {
@@ -85,11 +85,10 @@ def get_cross_section_hash(cs):
 
 def initialize_default_cross_section():
     """Initialize a default cross-section for standalone testing"""
-    from scite.cs_design import (
-        RectangularShape, BarReinforcement, ReinforcementLayout
-    )
     from scite.cs_components import SteelRebarComponent
-    
+    from scite.cs_design import (BarReinforcement, RectangularShape,
+                                 ReinforcementLayout)
+
     # Default rectangular cross-section: b=300mm, h=500mm
     if 'cs_shape_params' not in st.session_state:
         st.session_state.cs_shape_params = {
@@ -125,24 +124,22 @@ def get_cross_section_from_state():
     """Build CrossSection from session state (from cross_section_view)"""
     # Import here to avoid circular imports
     from scite.streamlit_app.cross_section_view import (
-        create_shape_from_params, 
-        build_reinforcement_from_layers
-    )
-    
+        build_reinforcement_from_layers, create_shape_from_params)
+
     # Check if cross-section is defined
     if 'cs_shape_params' not in st.session_state:
         return None
     
     shape = create_shape_from_params()
     
-    # Get concrete - use EC2Concrete directly for standalone mode
+    # Get concrete - use design values for standalone mode
     concrete_class = st.session_state.get('cs_concrete_selected', 'C30/37')
     # Extract f_ck from class name (e.g., 'C30/37' -> 30)
     try:
         f_ck = int(concrete_class.split('/')[0][1:])
-        concrete = EC2Concrete(f_ck=f_ck)
+        concrete = EC2ParabolaRectangle(f_ck=f_ck, alpha_cc=0.85, gamma_c=1.5)
     except:
-        concrete = EC2Concrete(f_ck=30)  # Default to C30/37
+        concrete = EC2ParabolaRectangle(f_ck=30, alpha_cc=0.85, gamma_c=1.5)  # Default to C30/37
     
     reinforcement = build_reinforcement_from_layers()
     
