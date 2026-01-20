@@ -38,22 +38,28 @@ dev_docs/
 - Full Streamlit application with 6-step workflow
 - **Location**: `phase_2_cs_design/`
 
-### 🎯 Current Focus: Material Architecture Strategy
+### 🎯 Current Focus: Material Architecture Strategy (Refined)
 
-**Goal**: Design triangle of Product - Material Model - Safety - Use Case
+**Goal**: Dual-adapter system for Product → Model → Safety → Context
 
 **Key Topics**:
-1. **Concrete Model Decomposition**: Separate compression/tension laws
-2. **Strength Level Semantics**: Mean, characteristic, design values
-3. **Use-Case Contexts**: ULS design, SLS verification, teaching, research
-4. **Safety Factor Application**: Where and when to apply γ_c, γ_s, α_cc
+1. **Dual-Adapter Pattern**: ProductAdapter (model type) + SafetyAdapter (strength level)
+2. **Multiple Model Variants**: Parabola-rectangle, bilinear, parabola-drop for each material
+3. **Sympy-Based Safety Factors**: Algebraic expressions for all strength transformations
+4. **Composable Models**: Concrete = Compression + Tension (mix-and-match)
+5. **Teaching Integration**: LaTeX rendering, equation display, model comparison
 
 **Why Now**: 
-- Current concrete model uses hidden mean values
-- No clear use-case differentiation (ULS vs SLS vs teaching)
-- Need systematic approach before mkappa phase
+- Support multiple constitutive laws per material (parabola, bilinear, etc.)
+- Enable clean separation: model type selection vs safety level application
+- Provide algebraic transparency via sympy for teaching/research
+- Prepare for mkappa integration with flexible material models
 
-**Document**: `MATERIAL_ARCHITECTURE_STRATEGY.md`
+**Documents**: 
+- `MATERIAL_ARCHITECTURE_STRATEGY.md` (full strategy)
+- `MATERIAL_ARCHITECTURE_QUICKREF.md` (quick reference)
+- `material_architecture.puml` (class diagram)
+- `material_flow_diagram.puml` (sequence diagram)
 
 ### 📋 Phase 3: Moment-Curvature Analysis (PLANNED)
 - Refactor mkappa to use modern cs_design
@@ -64,16 +70,23 @@ dev_docs/
 
 ### 1. MATERIAL_ARCHITECTURE_STRATEGY.md (READ FIRST! 🎯)
 
-Active strategic planning for material model architecture.
+**Active strategic planning for dual-adapter material model system.**
 
-**Addresses**:
-- Product-Material-Safety-UseCase triangle
-- Concrete model decomposition (compression + tension)
-- Strength level semantics (mean, characteristic, design)
-- Use-case contexts (ULS, SLS, teaching, research)
-- Implementation roadmap
+**Covers**:
+- Dual-adapter pattern: ProductAdapter + SafetyAdapter
+- Multiple material model variants (parabola-rectangle, bilinear, parabola-drop)
+- Sympy-based safety factors and constitutive equations
+- Composable concrete models (compression + tension)
+- 5-week implementation roadmap
+- Design decisions and trade-offs
 
-**Why Important**: Foundation for next development phase
+**Visual Aids**:
+- `material_architecture.puml` - Complete class structure with relationships
+- `material_flow_diagram.puml` - Step-by-step creation sequence
+
+**Quick Reference**: `MATERIAL_ARCHITECTURE_QUICKREF.md` - Usage patterns and API summary
+
+**Why Important**: Foundation for next development phase, enables flexible material modeling
 
 ### 2. DOCKER_DEPLOYMENT.md (OPERATIONAL)
 
