@@ -9,10 +9,11 @@ References:
     Typical reinforcing steel behavior with yield plateau and hardening
 """
 
-import numpy as np
-import sympy as sp
 from functools import cached_property
 from typing import Optional
+
+import numpy as np
+import sympy as sp
 
 from scite.core import BMCSModel, ui_field
 from scite.core.symbolic import SymbolicExpression
@@ -46,23 +47,33 @@ class SteelReinforcement(BMCSModel):
         gt=0
     )
     
-    f_sy: float = ui_field(
+    f_yk: float = ui_field(
         500.0,
-        label=r"$f_{sy}$",
+        label=r"$f_{yk}$",
         unit="MPa",
         range=(300.0, 700.0),
         step=10.0,
-        description="Yield strength of steel",
+        description="Characteristic yield strength",
         gt=0
     )
     
-    f_st: float = ui_field(
+    f_tk: float = ui_field(
         525.0,
-        label=r"$f_{st}$",
+        label=r"$f_{tk}$",
         unit="MPa",
         range=(400.0, 800.0),
         step=10.0,
-        description="Ultimate tensile strength (f_st ≥ f_sy)",
+        description="Characteristic tensile strength (f_tk ≥ f_yk)",
+        gt=0
+    )
+    
+    gamma_s: float = ui_field(
+        1.15,
+        label=r"$\gamma_s$",
+        unit="-",
+        range=(1.0, 1.5),
+        step=0.05,
+        description="Partial safety factor for steel (EC2: 1.15)",
         gt=0
     )
     
@@ -73,16 +84,6 @@ class SteelReinforcement(BMCSModel):
         range=(0.01, 0.15),
         step=0.005,
         description="Ultimate strain at peak stress",
-        gt=0
-    )
-    
-    factor: float = ui_field(
-        1.0,
-        label=r"Factor",
-        unit="-",
-        range=(0.5, 1.5),
-        step=0.05,
-        description="Safety/adjustment factor for stress",
         gt=0
     )
     
@@ -101,24 +102,24 @@ class SteelReinforcement(BMCSModel):
     # -------------------------------------------------------------------------
     
     @cached_property
-    def eps_sy(self) -> float:
-        """Yield strain (derived from yield stress and modulus)"""
-        return self.f_sy_scaled / self.E_s
+    def f_yd(self) -> float:
+        """Design yield strength: f_yd = f_yk / γ_s"""
+        return self.f_yk / self.gamma_s
     
     @cached_property
-    def f_sy_scaled(self) -> float:
-        """Scaled yield strength (with safety factor)"""
-        return self.factor * self.f_sy
+    def f_td(self) -> float:
+        """Design tensile strength: f_td = f_tk / γ_s"""
+        return self.f_tk / self.gamma_s
     
     @cached_property
-    def f_st_scaled(self) -> float:
-        """Scaled ultimate strength (with safety factor)"""
-        return self.factor * self.f_st
+    def eps_yd(self) -> float:
+        """Yield strain at design strength (derived from f_yd and modulus)"""
+        return self.f_yd / self.E_s
     
     @cached_property
     def ductility_ratio(self) -> float:
-        """Ductility ratio k = f_st / f_sy"""
-        return self.f_st / self.f_sy
+        """Ductility ratio k = f_tk / f_yk"""
+        return self.f_tk / self.f_yk
     
     # -------------------------------------------------------------------------
     # Symbolic expression
@@ -127,7 +128,7 @@ class SteelReinforcement(BMCSModel):
     @cached_property
     def symbolic_stress(self) -> SymbolicExpression:
         """
-        Create symbolic stress-strain expression.
+        Create symbolic stress-strain expression using design values.
         
         The model consists of 7 branches (symmetric):
         1. Zero stress before ultimate compression strain + extension
@@ -138,35 +139,37 @@ class SteelReinforcement(BMCSModel):
         6. Hardening from yield to ultimate stress (tension)
         7. Softening from ultimate stress to zero (tension)
         8. Zero stress after ultimate tension strain + extension
+        
+        All stresses are design values: f_yd = f_yk / γ_s
         """
         eps = sp.Symbol('varepsilon', real=True)
         
-        # Parameters
+        # Parameters (design values)
         E_s = self.E_s
-        eps_sy = self.eps_sy
+        eps_yd = self.eps_yd  # Yield strain at design strength
         eps_ud = self.eps_ud
-        f_sy = self.f_sy_scaled
-        f_st = self.f_st_scaled
+        f_yd = self.f_yd      # Design yield strength
+        f_td = self.f_td      # Design tensile strength
         ext = self.ext_factor
         
         # Piecewise stress function
         sig = sp.Piecewise(
             # Far compression (zero stress)
-            (0, eps < -eps_ud - ext * eps_sy),  # type: ignore[operator]
+            (0, eps < -eps_ud - ext * eps_yd),  # type: ignore[operator]
             # Post-ultimate softening (compression)
-            (-f_st + f_st * (-eps - eps_ud) / (ext * eps_sy), 
+            (-f_td + f_td * (-eps - eps_ud) / (ext * eps_yd), 
              eps < -eps_ud),  # type: ignore[operator]
             # Strain hardening (compression)
-            (-f_sy - (f_st - f_sy) * ((-eps - eps_sy) / (eps_ud - eps_sy)), 
-             eps < -eps_sy),  # type: ignore[operator]
+            (-f_yd - (f_td - f_yd) * ((-eps - eps_yd) / (eps_ud - eps_yd)), 
+             eps < -eps_yd),  # type: ignore[operator]
             # Elastic (compression)
-            (E_s * eps, eps < eps_sy),  # type: ignore[operator]
+            (E_s * eps, eps < eps_yd),  # type: ignore[operator]
             # Strain hardening (tension)
-            (f_sy + (f_st - f_sy) * ((eps - eps_sy) / (eps_ud - eps_sy)), 
+            (f_yd + (f_td - f_yd) * ((eps - eps_yd) / (eps_ud - eps_yd)), 
              eps < eps_ud),  # type: ignore[operator]
             # Post-ultimate softening (tension)
-            (f_st - f_st * (eps - eps_ud) / (ext * eps_sy), 
-             eps < eps_ud + ext * eps_sy),  # type: ignore[operator]
+            (f_td - f_td * (eps - eps_ud) / (ext * eps_yd), 
+             eps < eps_ud + ext * eps_yd),  # type: ignore[operator]
             # Far tension (zero stress)
             (0, True)
         )
@@ -236,18 +239,18 @@ class SteelReinforcement(BMCSModel):
         sig = self.get_sig(eps)
         
         # Main curve
-        ax.plot(eps, sig, 'b-', linewidth=2, label='σ-ε curve')
+        ax.plot(eps, sig, 'b-', linewidth=2, label='σ-ε curve (design)')
         
         # Key points
         if show_key_points:
             # Yield points
-            ax.plot([self.eps_sy, -self.eps_sy], 
-                   [self.f_sy_scaled, -self.f_sy_scaled],
-                   'ro', markersize=8, label=f'Yield: ε_sy={self.eps_sy:.4f}')
+            ax.plot([self.eps_yd, -self.eps_yd], 
+                   [self.f_yd, -self.f_yd],
+                   'ro', markersize=8, label=f'Yield: ε_yd={self.eps_yd:.4f}')
             
             # Ultimate points
             ax.plot([self.eps_ud, -self.eps_ud],
-                   [self.f_st_scaled, -self.f_st_scaled],
+                   [self.f_td, -self.f_td],
                    'rs', markersize=8, label=f'Ultimate: ε_ud={self.eps_ud:.4f}')
         
         # Axes and labels
@@ -255,7 +258,7 @@ class SteelReinforcement(BMCSModel):
         ax.axvline(x=0, color='k', linestyle='-', linewidth=0.5)
         ax.set_xlabel('Strain ε [-]')
         ax.set_ylabel('Stress σ [MPa]')
-        ax.set_title(f'Steel Reinforcement: f_sy={self.f_sy:.0f} MPa, E_s={self.E_s:.0f} MPa')
+        ax.set_title(f'Steel Reinforcement: f_yk={self.f_yk:.0f} MPa, f_yd={self.f_yd:.0f} MPa, γ_s={self.gamma_s:.2f}')
         ax.legend()
         ax.grid(True, alpha=0.3)
     
@@ -264,41 +267,43 @@ class SteelReinforcement(BMCSModel):
         return {
             'Material': 'Steel Reinforcement',
             'E_s [MPa]': f"{self.E_s:.0f}",
-            'f_sy [MPa]': f"{self.f_sy:.1f}",
-            'f_st [MPa]': f"{self.f_st:.1f}",
-            'eps_sy [-]': f"{self.eps_sy:.6f}",
+            'f_yk [MPa]': f"{self.f_yk:.1f}",
+            'f_yd [MPa]': f"{self.f_yd:.1f}",
+            'f_tk [MPa]': f"{self.f_tk:.1f}",
+            'f_td [MPa]': f"{self.f_td:.1f}",
+            'γ_s [-]': f"{self.gamma_s:.2f}",
+            'eps_yd [-]': f"{self.eps_yd:.6f}",
             'eps_ud [-]': f"{self.eps_ud:.4f}",
             'Ductility k': f"{self.ductility_ratio:.3f}",
-            'Factor': f"{self.factor:.2f}",
         }
 
 
 # Convenience function for common steel grades
 def create_steel(
     grade: str = 'B500B',
-    factor: float = 1.0
+    gamma_s: float = 1.15
 ) -> SteelReinforcement:
     """
     Create steel reinforcement with predefined properties.
     
     Args:
         grade: Steel grade ('B500A', 'B500B', 'B500C', etc.)
-        factor: Safety/adjustment factor
+        gamma_s: Partial safety factor (default 1.15 for EC2 design)
         
     Returns:
-        SteelReinforcement instance
+        SteelReinforcement instance with design values
         
     Examples:
-        >>> steel = create_steel('B500B')
-        >>> steel = create_steel('B500C', factor=1/1.15)  # Design strength
+        >>> steel = create_steel('B500B')  # Uses γ_s = 1.15 (design)
+        >>> steel = create_steel('B500B', gamma_s=1.0)  # Characteristic values
     """
     # Common European steel grades (EN 10080)
     grades = {
-        'B500A': {'f_sy': 500, 'f_st': 525, 'eps_ud': 0.025},  # k ≥ 1.05
-        'B500B': {'f_sy': 500, 'f_st': 540, 'eps_ud': 0.050},  # k ≥ 1.08
-        'B500C': {'f_sy': 500, 'f_st': 575, 'eps_ud': 0.075},  # k ≥ 1.15
-        'B600A': {'f_sy': 600, 'f_st': 630, 'eps_ud': 0.020},
-        'B600B': {'f_sy': 600, 'f_st': 660, 'eps_ud': 0.050},
+        'B500A': {'f_yk': 500, 'f_tk': 525, 'eps_ud': 0.025},  # k ≥ 1.05
+        'B500B': {'f_yk': 500, 'f_tk': 540, 'eps_ud': 0.050},  # k ≥ 1.08
+        'B500C': {'f_yk': 500, 'f_tk': 575, 'eps_ud': 0.075},  # k ≥ 1.15
+        'B600A': {'f_yk': 600, 'f_tk': 630, 'eps_ud': 0.020},
+        'B600B': {'f_yk': 600, 'f_tk': 660, 'eps_ud': 0.050},
     }
     
     if grade not in grades:
@@ -307,8 +312,8 @@ def create_steel(
     
     props = grades[grade]
     return SteelReinforcement(
-        f_sy=props['f_sy'],
-        f_st=props['f_st'],
+        f_yk=props['f_yk'],
+        f_tk=props['f_tk'],
         eps_ud=props['eps_ud'],
-        factor=factor
+        gamma_s=gamma_s
     )

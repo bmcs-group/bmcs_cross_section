@@ -73,13 +73,13 @@ class ReinforcementLayer(BMCSModel):
     
     @property
     def f_sy(self) -> float:
-        """Yield strength from material model [MPa]"""
-        return self.material.f_sy
+        """Yield strength from material model [MPa] - returns design value f_yd"""
+        return self.material.f_yd
     
     @property
     def f_st(self) -> float:
-        """Tensile strength from material model [MPa]"""
-        return self.material.f_st
+        """Tensile strength from material model [MPa] - returns design value f_td"""
+        return self.material.f_td
     
     @property
     def E_s(self) -> float:
@@ -88,8 +88,8 @@ class ReinforcementLayer(BMCSModel):
     
     @property
     def eps_sy(self) -> float:
-        """Yield strain from material model [-]"""
-        return self.material.eps_sy
+        """Yield strain from material model [-] - returns design value eps_yd"""
+        return self.material.eps_yd
     
     def get_sig(self, eps: float | npt.NDArray[np.float64]) -> float | npt.NDArray[np.float64]:
         """

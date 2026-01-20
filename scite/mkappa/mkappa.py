@@ -88,7 +88,7 @@ class MKappaAnalysis(BMCSModel):
         h = self.cs.h_total
         
         # Get material strain limits
-        eps_cu = abs(self.cs.concrete.eps_cu1)  # Ultimate compressive strain (negative)
+        eps_cu = abs(self.cs.concrete.eps_cu2_computed)  # Ultimate compressive strain (negative)
         
         # Get maximum tensile strain from reinforcement
         eps_su = 0.010  # Default steel ultimate strain

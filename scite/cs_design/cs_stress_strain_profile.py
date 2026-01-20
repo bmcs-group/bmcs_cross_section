@@ -508,7 +508,7 @@ class StressStrainProfile:
             # External force N_Ed (at mid-height) if provided
             if N_Ed is not None and abs(N_Ed) > 0.1:
                 mid_height = self.cs.h_total / 2
-                arrow_len = N_Ed  # kN
+                arrow_len = N_Ed  # kN (negative=compression=left, positive=tension=right)
                 head_width = self.cs.h_total * 0.04
                 head_length = max_force * 0.02
                 ax_stress.arrow(0, mid_height, arrow_len, 0, 

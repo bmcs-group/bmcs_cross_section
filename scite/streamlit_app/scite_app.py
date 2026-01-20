@@ -194,7 +194,7 @@ def main():
     
     with st.sidebar:
         # Workflow menu using buttons with matching font styling
-        menu_items = ["Components", "Cross-Section", "State Profiles", "M-κ Analysis", "NM-Assessment", "Summary"]
+        menu_items = ["Components", "Cross-Section", "NM-Assessment", "M-κ Analysis"]
         
         for item in menu_items:
             is_selected = st.session_state.workflow_step == item
@@ -241,10 +241,8 @@ def main():
     step_map = {
         "Components": "components",
         "Cross-Section": "cross_section",
-        "State Profiles": "state_profiles",
-        "M-κ Analysis": "mkappa",
         "NM-Assessment": "nm_assessment",
-        "Summary": "summary"
+        "M-κ Analysis": "mkappa"
     }
     current_step = step_map[workflow_step]
     
@@ -252,18 +250,14 @@ def main():
         render_components_view()
     elif current_step == "cross_section":
         render_cross_section_view()
-    elif current_step == "state_profiles":
-        render_state_profiles_view()
-    elif current_step == "mkappa":
-        from scite.streamlit_app.mkappa_analysis_view import \
-            render_mkappa_analysis_view
-        render_mkappa_analysis_view()
     elif current_step == "nm_assessment":
         from scite.streamlit_app.nm_assessment_view import \
             render_nm_assessment_view
         render_nm_assessment_view()
-    elif current_step == "summary":
-        render_summary_view()
+    elif current_step == "mkappa":
+        from scite.streamlit_app.mkappa_analysis_view import \
+            render_mkappa_analysis_view
+        render_mkappa_analysis_view()
 
 
 if __name__ == "__main__":

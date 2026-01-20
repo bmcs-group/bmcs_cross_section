@@ -44,7 +44,7 @@ def get_cross_section_hash(cs):
                 'z': layer.z,
                 'A_s': layer.A_s,
                 'material': {
-                    'f_sy': layer.material.f_sy,
+                    'f_yd': layer.material.f_yd,
                     'E_s': layer.material.E_s,
                 }
             }

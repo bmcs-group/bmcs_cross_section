@@ -5,11 +5,12 @@ Standard steel reinforcing bars according to EC2.
 Includes catalog of all standard diameters and grades.
 """
 
+from dataclasses import dataclass
+from typing import Any, Optional
+
 import numpy as np
 import numpy.typing as npt
 import pandas as pd
-from dataclasses import dataclass
-from typing import Optional, Any
 
 from scite.cs_components.component_base import ReinforcementComponent
 from scite.matmod.steel_reinforcement import create_steel
@@ -43,7 +44,7 @@ class SteelRebarComponent(ReinforcementComponent):
         # Create matmod if not provided
         if self.matmod is None:
             self.matmod = create_steel(self.grade)
-            self.f_tk = self.matmod.f_sy  # Yield strength as characteristic
+            self.f_tk = self.matmod.f_yk  # Characteristic yield strength
             self.E = self.matmod.E_s
             self.eps_uk = self.matmod.eps_ud  # Ultimate strain
     
