@@ -70,24 +70,29 @@ note left of ConcreteProduct
   <b>Model Registry Pattern</b>
   
   AVAILABLE_MODELS = {
-    'ec2_monolithic': EC2ConcreteAdapter,
-    'parabola_rectangle': ConcreteParabolaAdapter,
-    'bilinear': ConcreteBilinearAdapter,
-    'parabola_drop': ConcreteParabolaDropAdapter
+    'ec2_monolithic': EC2ConcreteAdapter,        # All-in-one (existing)
+    'parabola_rectangle': ConcreteParabolaAdapter,  # Standalone compression
+    'bilinear': ConcreteBilinearAdapter,           # Standalone compression
+    'parabola_drop': ConcreteParabolaDropAdapter,  # Standalone compression (nonlinear)
+    'composed': ConcreteComposedAdapter            # Custom comp+tension mix
   }
   
   Example:
   product = ConcreteProduct("C30/37")
   context = AssessmentContext(UseCase.ULS_DESIGN)
   
-  # Option 1: Monolithic (existing)
+  # Option 1: Monolithic all-in-one (existing model)
   model = product.create_model('ec2_monolithic', context)
   
-  # Option 2: Composed (new, for mix-and-match)
-  model = product.create_composed_model(
+  # Option 2: Standalone compression law (returns 0 for eps>0)
+  model = product.create_model('parabola_rectangle', context)
+  model = product.create_model('bilinear', context)
+  model = product.create_model('parabola_drop', context)  # For nonlinear analysis
+  
+  # Option 3: Composed with custom mix (flexible)
+  model = product.create_model('composed', context,
       compression='parabola_rectangle',
-      tension='linear',
-      context=context
+      tension='linear'
   )
 end note
 
@@ -133,6 +138,18 @@ class ConcreteBilinearAdapter <<Adapter>> #FFF3E0 {
     + extract_params(): dict
 }
 
+class ConcreteParabolaDropAdapter <<Adapter>> #FFF3E0 {
+    + product: ConcreteProduct
+    + extract_params(): dict
+}
+
+class ConcreteComposedAdapter <<Adapter>> #FFF3E0 {
+    + product: ConcreteProduct
+    + compression_type: str
+    + tension_type: str
+    + extract_params(): dict
+}
+
 class EC2ConcreteAdapter <<Adapter>> #FFF3E0 {
     + product: ConcreteProduct
     + extract_params(): dict
@@ -165,37 +182,34 @@ abstract class CompressionLaw <<Model>> #E3F2FD {
 }
 
 class EC2ParabolaRectangle <<Model>> #E3F2FD {
-    + f_ck: float
     + n: float
     + eps_c1: float
     + eps_cu1: float
 }
 
 class EC2Bilinear <<Model>> #E3F2FD {
-    + f_ck: float
     + E_c: float
     + eps_cu: float
 }
 
 class EC2ParabolaDrop <<Model>> #E3F2FD {
-    + f_ck: float
     + eps_c1: float
     + eps_cu: float
+    + k: float
 }
 
 ' --- Tension Laws (2 variants) ---
 abstract class TensionLaw <<Model>> #E3F2FD {
-    + f_ck: float
+    + f_ctk: float
 }
 
 class LinearTension <<Model>> #E3F2FD {
-    + f_ct: float
     + E_ct: float
 }
 
 class FiberTension <<Model>> #E3F2FD {
-    + f_ct: float
     + sigma_plateau: float
+    + eps_tu: float
 }
 
 ' --- Monolithic Concrete Model (Existing) ---
@@ -339,6 +353,8 @@ TensionLaw <|-- FiberTension
 
 ProductAdapter <|-- ConcreteParabolaAdapter
 ProductAdapter <|-- ConcreteBilinearAdapter
+ProductAdapter <|-- ConcreteParabolaDropAdapter
+ProductAdapter <|-- ConcreteComposedAdapter
 ProductAdapter <|-- EC2ConcreteAdapter
 ProductAdapter <|-- SteelBilinearAdapter
 ProductAdapter <|-- SteelBilinearHardeningAdapter
@@ -357,6 +373,8 @@ SteelProduct ..> ProductAdapter : <<registry lookup>>
 
 ConcreteParabolaAdapter ..> EC2ParabolaRectangle : <<builds>>
 ConcreteBilinearAdapter ..> EC2Bilinear : <<builds>>
+ConcreteParabolaDropAdapter ..> EC2ParabolaDrop : <<builds>>
+ConcreteComposedAdapter ..> ComposedConcrete : <<builds>>
 EC2ConcreteAdapter ..> EC2Concrete : <<builds>>
 SteelBilinearAdapter ..> BilinearSteel : <<builds>>
 SteelBilinearHardeningAdapter ..> BilinearSteelHardening : <<builds>>
