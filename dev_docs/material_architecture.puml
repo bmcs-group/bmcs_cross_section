@@ -1,6 +1,10 @@
 @startuml Material Model Architecture - Overview
 
-!theme blueprint
+skinparam backgroundColor white
+skinparam classBorderColor black
+skinparam classBackgroundColor white
+skinparam classArrowColor black
+skinparam shadowing false
 
 title Material Model Architecture - Component Overview
 

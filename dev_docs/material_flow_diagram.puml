@@ -1,7 +1,13 @@
 @startuml Material Model Creation Flow
 
-!theme blueprint
-skinparam backgroundColor #FAFAFA
+skinparam backgroundColor white
+skinparam sequenceArrowColor black
+skinparam sequenceActorBorderColor black
+skinparam sequenceParticipantBorderColor black
+skinparam sequenceLifeLineBorderColor black
+skinparam noteBorderColor black
+skinparam noteBackgroundColor lightyellow
+skinparam shadowing false
 
 title Material Model Creation Flow - Dual-Adapter Pattern
 
