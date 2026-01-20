@@ -630,14 +630,22 @@ class StressStrainProfile:
                           bbox=dict(boxstyle='round', facecolor='lightyellow', 
                                   alpha=0.6, edgecolor='black', linewidth=1.0))
         
-        # NOTE: N_total is the sum of all forces (F_c + F_s), which should be ≈0 for equilibrium
-        # For pure bending (no external axial load), equilibrium requires N_total ≈ 0
-        # The "error" is simply N_total itself (deviation from zero)
+        # NOTE: N_total is the sum of all internal forces (F_c + F_s)
+        # Equilibrium condition:
+        #   - If N_Ed is provided (external axial load): N_internal = N_Ed, so N_err = N_internal - N_Ed
+        #   - If N_Ed is None (pure bending): N_internal = 0, so N_err = N_internal
         
         # Show unbalanced force indicator if imbalance > threshold
         # Use absolute threshold of 0.1 kN rather than relative (more meaningful for equilibrium)
         threshold_kN = 0.1  # 0.1 kN = 100 N threshold
-        N_imbalance_kN = N_val / 1000
+        
+        # Calculate equilibrium error
+        if N_Ed is not None:
+            # With external axial load: error = internal - external
+            N_imbalance_kN = (N_val / 1000) - N_Ed
+        else:
+            # Pure bending: error = internal forces (should sum to zero)
+            N_imbalance_kN = N_val / 1000
         
         if abs(N_imbalance_kN) > threshold_kN:
             # Draw thick warning bar exactly on x-axis showing unbalanced force
