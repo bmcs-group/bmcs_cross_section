@@ -1,0 +1,189 @@
+@startuml Material Model Creation Flow
+
+!theme blueprint
+skinparam backgroundColor #FAFAFA
+
+title Material Model Creation Flow - Dual-Adapter Pattern
+
+actor User
+participant "ConcreteProduct\n(Catalog)" as Product
+participant "ProductAdapter\n(Parameter Extraction)" as PAdapter
+participant "MaterialModel\n(Constitutive Law)" as Model
+participant "SafetyAdapter\n(Strength Level)" as SAdapter
+participant "SAFETY_FACTORS\n(Sympy Dict)" as Safety
+participant "EC2Concrete\n(Composed)" as Composed
+
+== Model Selection & Creation ==
+
+User -> Product : create_concrete_model(\n  compression_type='parabola_rectangle',\n  tension_type='linear',\n  strength_level='design')
+
+activate Product
+
+Product -> Product : select adapters based on model_type
+
+== Compression Model Creation ==
+
+Product -> PAdapter : ConcreteParabolaAdapter(product)
+activate PAdapter
+
+PAdapter -> PAdapter : extract_params()
+note right
+  Extracts:
+  - f_ck = 30 MPa
+  - E_cm = 32000 MPa
+  - n, eps_c1, eps_cu1
+end note
+
+PAdapter -> Model : EC2ParabolaRectangle(\n  f_ck=30,\n  E_cm=32000,\n  ...)
+activate Model
+
+Model -> Model : __post_init__()
+note right
+  Creates SymbolicExpression:
+  
+  σ = f_c·[1-(1-ε/ε_c1)^n]
+  
+  + LaTeX rendering
+  + Lambdified function
+end note
+
+deactivate Model
+
+PAdapter --> Product : base_compression_model
+deactivate PAdapter
+
+Product -> SAdapter : ConcreteCompressionSafety(\n  model=base_compression_model,\n  strength_level='design',\n  f_ck=30)
+activate SAdapter
+
+SAdapter -> Safety : get('concrete_compression', 'design')
+activate Safety
+
+Safety --> SAdapter : SymbolicExpression(\n  expr='alpha_cc * f_ck / gamma_c',\n  params={alpha_cc:0.85, gamma_c:1.5})
+
+deactivate Safety
+
+SAdapter -> SAdapter : apply_factors()
+note right
+  Computes:
+  f_cd = 0.85 × 30 / 1.5
+       = 17 MPa
+end note
+
+SAdapter -> Model : EC2ParabolaRectangle(\n  f_ck=17,  ← adjusted!\n  E_cm=...,\n  ...)
+activate Model
+Model --> SAdapter : adjusted_compression_model
+deactivate Model
+
+SAdapter --> Product : adjusted_compression_model
+deactivate SAdapter
+
+== Tension Model Creation ==
+
+Product -> PAdapter : ConcreteTensionAdapter(product)
+activate PAdapter
+
+PAdapter -> PAdapter : extract_params()
+note right
+  Extracts:
+  - f_ck = 30 MPa
+  - E_ct = 33000 MPa
+end note
+
+PAdapter -> Model : LinearTension(\n  f_ck=30,\n  E_ct=33000)
+activate Model
+
+Model -> Model : __post_init__()
+note right
+  Creates SymbolicExpression:
+  
+  σ = E_ct·ε  (ε ≤ ε_cr)
+  
+  + LaTeX rendering
+end note
+
+deactivate Model
+
+PAdapter --> Product : base_tension_model
+deactivate PAdapter
+
+Product -> SAdapter : ConcreteTensionSafety(\n  model=base_tension_model,\n  strength_level='design',\n  f_ck=30)
+activate SAdapter
+
+SAdapter -> Safety : get('concrete_tension', 'design')
+activate Safety
+
+Safety --> SAdapter : SymbolicExpression(\n  expr='alpha_ct * 0.3 * f_ck**(2/3) / gamma_c')
+
+deactivate Safety
+
+SAdapter -> SAdapter : apply_factors()
+note right
+  Computes:
+  f_ctd = 1.0 × 0.3 × 30^(2/3) / 1.5
+        = 2.01 MPa
+end note
+
+SAdapter -> Model : LinearTension(\n  f_ct=2.01,  ← adjusted!\n  E_ct=...)
+activate Model
+Model --> SAdapter : adjusted_tension_model
+deactivate Model
+
+SAdapter --> Product : adjusted_tension_model
+deactivate SAdapter
+
+== Composition ==
+
+Product -> Composed : EC2Concrete(\n  f_ck=30,\n  compression=adjusted_compression_model,\n  tension=adjusted_tension_model,\n  strength_level='design')
+activate Composed
+
+Composed -> Composed : __post_init__()
+note right
+  Stores both components
+  
+  get_sig(eps):
+    if eps < 0: compression.get_sig(eps)
+    if eps > 0: tension.get_sig(eps)
+end note
+
+deactivate Composed
+
+Product --> User : concrete_model_in_context
+deactivate Product
+
+== Usage ==
+
+User -> Composed : get_sig(eps_array)
+activate Composed
+
+Composed -> Model : compression.get_sig(eps[eps<0])
+activate Model
+Model --> Composed : sig_compression
+deactivate Model
+
+Composed -> Model : tension.get_sig(eps[eps>0])
+activate Model
+Model --> Composed : sig_tension
+deactivate Model
+
+Composed -> Composed : combine results
+
+Composed --> User : stress_array
+deactivate Composed
+
+User -> Composed : get_latex_documentation()
+activate Composed
+
+Composed -> Model : compression.get_latex()
+activate Model
+Model --> Composed : LaTeX string
+deactivate Model
+
+Composed -> Model : tension.get_latex()
+activate Model
+Model --> Composed : LaTeX string
+deactivate Model
+
+Composed --> User : "## Compression\n...\n## Tension\n..."
+deactivate Composed
+
+@enduml

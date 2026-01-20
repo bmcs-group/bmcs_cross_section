@@ -156,6 +156,17 @@ This enables:
 
 ## Refined Architecture: Multi-Model Material System
 
+### Visual Documentation
+
+**Architecture Diagrams:**
+1. **Class Structure:** [`material_architecture.puml`](material_architecture.puml) - Complete class hierarchy, relationships, and component interactions
+2. **Creation Flow:** [`material_flow_diagram.puml`](material_flow_diagram.puml) - Step-by-step sequence showing dual-adapter pattern in action
+
+You can render these diagrams using:
+- VS Code PlantUML extension
+- Online: http://www.plantuml.com/plantuml/
+- Command line: `plantuml *.puml`
+
 ### PlantUML Class Diagram
 
 **Full diagram available in:** [`material_architecture.puml`](material_architecture.puml)
