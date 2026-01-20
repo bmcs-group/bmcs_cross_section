@@ -70,6 +70,7 @@ note left of ConcreteProduct
   <b>Model Registry Pattern</b>
   
   AVAILABLE_MODELS = {
+    'ec2_monolithic': EC2ConcreteAdapter,
     'parabola_rectangle': ConcreteParabolaAdapter,
     'bilinear': ConcreteBilinearAdapter,
     'parabola_drop': ConcreteParabolaDropAdapter
@@ -78,7 +79,16 @@ note left of ConcreteProduct
   Example:
   product = ConcreteProduct("C30/37")
   context = AssessmentContext(UseCase.ULS_DESIGN)
-  model = product.create_model('parabola_rectangle', context)
+  
+  # Option 1: Monolithic (existing)
+  model = product.create_model('ec2_monolithic', context)
+  
+  # Option 2: Composed (new, for mix-and-match)
+  model = product.create_composed_model(
+      compression='parabola_rectangle',
+      tension='linear',
+      context=context
+  )
 end note
 
 class SteelProduct <<Product>> #E8F5E9 {
@@ -123,6 +133,20 @@ class ConcreteBilinearAdapter <<Adapter>> #FFF3E0 {
     + extract_params(): dict
 }
 
+class EC2ConcreteAdapter <<Adapter>> #FFF3E0 {
+    + product: ConcreteProduct
+    + extract_params(): dict
+}
+
+note right of EC2ConcreteAdapter
+  <b>Monolithic Model Adapter</b>
+  
+  Extracts params for all-in-one EC2Concrete:
+  - f_ck
+  - factor (from context)
+  - Optional: E_cc, E_ct, eps_cr, eps_tu
+end note
+
 class SteelBilinearAdapter <<Adapter>> #FFF3E0 {
     + product: SteelProduct
     + extract_params(): dict
@@ -134,6 +158,8 @@ class SteelBilinearHardeningAdapter <<Adapter>> #FFF3E0 {
 }
 
 ' ===== Concrete Material Models =====
+
+' --- Compression Laws (3 variants) ---
 abstract class CompressionLaw <<Model>> #E3F2FD {
     + f_ck: float
 }
@@ -157,6 +183,7 @@ class EC2ParabolaDrop <<Model>> #E3F2FD {
     + eps_cu: float
 }
 
+' --- Tension Laws (2 variants) ---
 abstract class TensionLaw <<Model>> #E3F2FD {
     + f_ck: float
 }
@@ -170,6 +197,30 @@ class FiberTension <<Model>> #E3F2FD {
     + f_ct: float
     + sigma_plateau: float
 }
+
+' --- Monolithic Concrete Model (Existing) ---
+class EC2Concrete <<Monolithic>> #E3F2FD {
+    + f_ck: float
+    + factor: float
+    + mu: float
+    + E_cc: float
+    + E_ct: float
+    --
+    + symbolic_stress: SymbolicExpression
+    + get_sig(eps): ndarray
+    + get_E_t(eps): ndarray
+}
+
+note right of EC2Concrete
+  <b>Monolithic Model (Existing)</b>
+  
+  All-in-one concrete model:
+  - Compression: EC2 parabola-rectangle
+  - Tension: Linear + post-crack softening
+  - Both behaviors in single class
+  
+  User cannot mix compression/tension types
+end note
 
 ' ===== Steel Material Models =====
 class BilinearSteel <<Model>> #E3F2FD {
@@ -248,20 +299,27 @@ note left of SAFETY_FACTORS
 end note
 
 ' ===== Composed Models =====
-class EC2Concrete <<Composed>> #FCE4EC {
+class ComposedConcrete <<Composed>> #FCE4EC {
     + f_ck: float
     + compression: CompressionLaw
     + tension: TensionLaw
     + strength_level: str
-    + with_strength_level(): EC2Concrete
+    + with_strength_level(): ComposedConcrete
 }
 
-note bottom of EC2Concrete
-  <b>Composition Pattern</b>
+note bottom of ComposedConcrete
+  <b>Composed Model (New Design)</b>
   
+  Flexible composition pattern:
   get_sig(eps):
     if eps < 0: compression.get_sig(eps)
     if eps > 0: tension.get_sig(eps)
+  
+  Can mix any compression + tension:
+  - ParabolaRectangle + Linear
+  - ParabolaRectangle + Fiber
+  - Bilinear + Linear
+  - etc. (3 × 2 = 6 combinations)
 end note
 
 ' ===== Inheritance Relationships =====
@@ -270,6 +328,7 @@ MaterialModel <|-- TensionLaw
 MaterialModel <|-- BilinearSteel
 MaterialModel <|-- BilinearSteelHardening
 MaterialModel <|-- EC2Concrete
+MaterialModel <|-- ComposedConcrete
 
 CompressionLaw <|-- EC2ParabolaRectangle
 CompressionLaw <|-- EC2Bilinear
@@ -280,6 +339,7 @@ TensionLaw <|-- FiberTension
 
 ProductAdapter <|-- ConcreteParabolaAdapter
 ProductAdapter <|-- ConcreteBilinearAdapter
+ProductAdapter <|-- EC2ConcreteAdapter
 ProductAdapter <|-- SteelBilinearAdapter
 ProductAdapter <|-- SteelBilinearHardeningAdapter
 
@@ -297,11 +357,13 @@ SteelProduct ..> ProductAdapter : <<registry lookup>>
 
 ConcreteParabolaAdapter ..> EC2ParabolaRectangle : <<builds>>
 ConcreteBilinearAdapter ..> EC2Bilinear : <<builds>>
+EC2ConcreteAdapter ..> EC2Concrete : <<builds>>
 SteelBilinearAdapter ..> BilinearSteel : <<builds>>
 SteelBilinearHardeningAdapter ..> BilinearSteelHardening : <<builds>>
 
 EC2ParabolaRectangle ..> SafetyAdapter : <<wrapped by>>
 EC2Bilinear ..> SafetyAdapter : <<wrapped by>>
+EC2Concrete ..> SafetyAdapter : <<wrapped by>>
 LinearTension ..> SafetyAdapter : <<wrapped by>>
 BilinearSteel ..> SafetyAdapter : <<wrapped by>>
 BilinearSteelHardening ..> SafetyAdapter : <<wrapped by>>
@@ -309,7 +371,7 @@ BilinearSteelHardening ..> SafetyAdapter : <<wrapped by>>
 SafetyAdapter ..> SAFETY_FACTORS : <<uses>>
 SafetyAdapter ..> AssessmentContext : <<reads strength_level from>>
 
-EC2Concrete *-- CompressionLaw : composes
-EC2Concrete *-- TensionLaw : composes
+ComposedConcrete *-- CompressionLaw : composes
+ComposedConcrete *-- TensionLaw : composes
 
 @enduml
