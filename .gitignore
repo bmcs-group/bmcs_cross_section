@@ -43,3 +43,8 @@ package-lock.json
 geckodriver.log
 *.iml
 
+# Streamlit deployment files
+.streamlit/
+
+# Catalog cache (runtime generated)
+scite/cs_components/.catalog_cache/
