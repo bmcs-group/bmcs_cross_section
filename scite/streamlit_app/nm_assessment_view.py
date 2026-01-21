@@ -121,7 +121,7 @@ def render_nm_assessment_view():
             # Preserve loads if recreating
             N_Ed_preserved = -50.0
             M_Ed_preserved = 200.0
-            eps_s1_preserved = 0.0025
+            eps_s1_preserved = 0.0075
             
             if 'nm_assessment' in st.session_state and cs_changed:
                 # Preserve user's load settings when cross-section changes
@@ -145,7 +145,7 @@ def render_nm_assessment_view():
         
         # Initialize eps_s1 control if not present
         if 'nm_eps_s1' not in st.session_state:
-            st.session_state.nm_eps_s1 = 0.0025  # Initial steel strain (yielding)
+            st.session_state.nm_eps_s1 = 0.0075  # Initial steel strain (yielding)
         
         # Get assessment from session state
         nm = st.session_state.nm_assessment
@@ -191,7 +191,7 @@ def render_nm_assessment_view():
                 help="Top fiber strain (typically concrete ultimate: -0.0035)"
             )
             
-            # Create two sub-columns for slider and number input
+            # Create two sub-columns for slider and number input (synchronized)
             slider_col, input_col = st.columns([3, 1])
             
             with slider_col:
@@ -219,15 +219,19 @@ def render_nm_assessment_view():
                     label_visibility="collapsed"
                 )
             
-            # Use whichever control was changed most recently
-            # If the values differ, the number input takes precedence
-            if abs(eps_s1_number - st.session_state.nm_eps_s1) > 1e-6:
-                eps_s1_input = eps_s1_number
-            else:
+            # Synchronize: detect which control changed and update both
+            # Slider value is in eps_s1_slider, number input is in eps_s1_number
+            if abs(eps_s1_slider - st.session_state.nm_eps_s1) > 1e-9:
+                # Slider changed
                 eps_s1_input = eps_s1_slider
-            
-            # Update session state
-            st.session_state.nm_eps_s1 = eps_s1_input
+                st.session_state.nm_eps_s1 = eps_s1_slider
+            elif abs(eps_s1_number - st.session_state.nm_eps_s1) > 1e-9:
+                # Number input changed
+                eps_s1_input = eps_s1_number
+                st.session_state.nm_eps_s1 = eps_s1_number
+            else:
+                # No change, use current value
+                eps_s1_input = st.session_state.nm_eps_s1
             
             # Calculate eps_bot from eps_top and eps_s1 using plane section kinematics
             # This is the same logic as StressStrainProfile.set_state() Mode 4
