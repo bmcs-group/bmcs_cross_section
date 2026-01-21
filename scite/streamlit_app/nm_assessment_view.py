@@ -11,6 +11,7 @@ Inherits all visualization from StressStrainProfile - no redundancy.
 """
 
 import matplotlib.pyplot as plt
+import numpy as np
 import streamlit as st
 
 from scite.cs_design import CrossSection
@@ -69,9 +70,9 @@ def get_cross_section_from_state():
     concrete_class = st.session_state.get('cs_concrete_selected', 'C30/37')
     try:
         f_ck = int(concrete_class.split('/')[0][1:])
-        concrete = EC2ParabolaRectangle(f_ck=f_ck, alpha_cc=1.0, gamma_c=1.5)
+        concrete = EC2ParabolaRectangle(f_ck=f_ck, alpha_cc=0.85, gamma_c=1.5)
     except:
-        concrete = EC2ParabolaRectangle(f_ck=30, alpha_cc=1.0, gamma_c=1.5)
+        concrete = EC2ParabolaRectangle(f_ck=30, alpha_cc=0.85, gamma_c=1.5)
     
     reinforcement = build_reinforcement_from_layers()
     
@@ -118,7 +119,7 @@ def render_nm_assessment_view():
         # Initialize or recreate NM assessment state
         if 'nm_assessment' not in st.session_state or cs_changed:
             # Preserve loads if recreating
-            N_Ed_preserved = 0.0
+            N_Ed_preserved = -50.0
             M_Ed_preserved = 200.0
             eps_s1_preserved = 0.0025
             
@@ -190,16 +191,40 @@ def render_nm_assessment_view():
                 help="Top fiber strain (typically concrete ultimate: -0.0035)"
             )
             
-            eps_s1_input = st.slider(
-                "ε_s1 (adjust) [-]",
-                min_value=-0.005,
-                max_value=0.020,
-                value=st.session_state.nm_eps_s1,
-                step=0.0001,
-                format="%.4f",
-                help="Steel strain at lowest reinforcement layer - adjust to explore equilibrium",
-                key="nm_eps_s1_slider"
-            )
+            # Create two sub-columns for slider and number input
+            slider_col, input_col = st.columns([3, 1])
+            
+            with slider_col:
+                eps_s1_slider = st.slider(
+                    "ε_s1 (adjust) [-]",
+                    min_value=-0.005,
+                    max_value=0.020,
+                    value=st.session_state.nm_eps_s1,
+                    step=0.0001,
+                    format="%.4f",
+                    help="Steel strain at lowest reinforcement layer - adjust to explore equilibrium",
+                    key="nm_eps_s1_slider"
+                )
+            
+            with input_col:
+                eps_s1_number = st.number_input(
+                    "Exact value",
+                    min_value=-0.005,
+                    max_value=0.020,
+                    value=st.session_state.nm_eps_s1,
+                    step=0.0001,
+                    format="%.4f",
+                    help="Enter exact strain value",
+                    key="nm_eps_s1_number",
+                    label_visibility="collapsed"
+                )
+            
+            # Use whichever control was changed most recently
+            # If the values differ, the number input takes precedence
+            if abs(eps_s1_number - st.session_state.nm_eps_s1) > 1e-6:
+                eps_s1_input = eps_s1_number
+            else:
+                eps_s1_input = eps_s1_slider
             
             # Update session state
             st.session_state.nm_eps_s1 = eps_s1_input
@@ -318,6 +343,46 @@ def render_nm_assessment_view():
             st.write(f"- Height: {summary['h']:.0f} mm")
             st.write(f"- Concrete: C{summary['f_ck']:.0f}")
             st.write(f"- Layers: {len(cs.reinforcement.layers)}")
+        
+        # Material Laws Visualization
+        with st.expander("📈 Material Constitutive Laws", expanded=False):
+            st.markdown("**Stress-Strain Relationships**")
+            
+            # Create figure with two subplots
+            fig_mat, (ax_concrete, ax_steel) = plt.subplots(
+                1, 2, figsize=(14, 5)
+            )
+            
+            # Plot concrete law using built-in method
+            cs.concrete.plot_stress_strain(ax_concrete)
+            
+            # Plot steel law(s) using built-in method(s)
+            # Collect unique material models (in case different layers have different steel)
+            steel_materials = {}
+            for i, layer in enumerate(cs.reinforcement.layers):
+                mat_id = id(layer.material)  # Use object id to identify unique materials
+                if mat_id not in steel_materials:
+                    steel_materials[mat_id] = {
+                        'material': layer.material,
+                        'layer_indices': [i]
+                    }
+                else:
+                    steel_materials[mat_id]['layer_indices'].append(i)
+            
+            # Plot each unique steel material using its built-in method
+            for idx, (mat_id, mat_info) in enumerate(steel_materials.items()):
+                steel_mat = mat_info['material']
+                layer_nums = [i+1 for i in mat_info['layer_indices']]
+                
+                # Use built-in plot method with key points
+                steel_mat.plot_stress_strain(ax_steel, show_key_points=(idx == 0))
+                
+                # Update title to show all layers if multiple materials
+                if len(steel_materials) > 1:
+                    ax_steel.set_title(f'Steel Reinforcement Law(s) - {len(steel_materials)} different materials')
+            
+            st.pyplot(fig_mat, clear_figure=True)
+            plt.close()
     
     except Exception as e:
         st.error(f"⚠️ Error: {str(e)}")

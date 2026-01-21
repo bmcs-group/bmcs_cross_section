@@ -248,7 +248,7 @@ def create_default_nm_assessment() -> NMAssessment:
     shape = RectangularShape(b=300.0, h=500.0)
     
     # C30/37 concrete (design values)
-    concrete = EC2ParabolaRectangle(f_ck=30.0, alpha_cc=1.0, gamma_c=1.5)
+    concrete = EC2ParabolaRectangle(f_ck=30.0, alpha_cc=0.85, gamma_c=1.5)
     
     # Steel reinforcement: 4Ø20 at bottom (z=50mm), 2Ø16 at top (z=450mm)
     steel_mat = SteelReinforcement(f_sy=500.0)

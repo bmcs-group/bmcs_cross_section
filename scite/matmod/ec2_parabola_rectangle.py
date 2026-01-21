@@ -52,7 +52,7 @@ class EC2ParabolaRectangle(BMCSModel):
     )
     
     alpha_cc: float = ui_field(
-        1.0,
+        0.85,
         label=r"$\alpha_{cc}$",
         unit="-",
         range=(0.8, 1.0),

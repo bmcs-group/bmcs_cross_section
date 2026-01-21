@@ -219,7 +219,7 @@ class ConcreteComponent:
     
     # Safety factors
     gamma_c: float = 1.5  # Partial safety factor for concrete
-    alpha_cc: float = 1.0  # Coefficient for long-term effects
+    alpha_cc: float = 0.85  # Coefficient for long-term effects
     
     # Optional: link to full material model
     matmod: Optional[Any] = None

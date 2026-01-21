@@ -66,7 +66,7 @@ def create_concrete_catalog(use_cache: bool = True) -> pd.DataFrame:
         product_id = f"CONCRETE-EC2-{strength_class}"
         
         # Create component with material model (design values)
-        matmod = EC2ParabolaRectangle(f_ck=f_ck, alpha_cc=1.0, gamma_c=1.5)
+        matmod = EC2ParabolaRectangle(f_ck=f_ck, alpha_cc=0.85, gamma_c=1.5)
         
         component = ConcreteComponent(
             product_id=product_id,

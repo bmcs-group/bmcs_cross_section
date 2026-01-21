@@ -479,7 +479,7 @@ def render_cross_section_view():
             selected_row = concrete_catalog[concrete_catalog['strength_class'] == grade].iloc[0]
             concrete = EC2ParabolaRectangle(
                 f_ck=float(selected_row['f_ck']),
-                alpha_cc=1.0,
+                alpha_cc=0.85,
                 gamma_c=1.5
             )
             
