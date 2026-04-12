@@ -23,10 +23,7 @@ warnings.warn(
     stacklevel=2
 )
 
-# Legacy imports (if needed for backward compatibility)
-# Uncomment only if absolutely necessary
-# from .cs_design import CrossSectionDesign
-# from .cs_layout import CrossSectionLayout
-# from .cs_layout_dict import CrossSectionLayout as CrossSectionLayoutDict
-# from .cs_reinf_layer import ReinfLayer, BarLayer, FabricLayer
-# from .cs_shape import Rectangle, Circle, TShape, IShape, CustomShape
+# Legacy exports for backward compatibility (beam module depends on these)
+from .cs_design import CrossSectionDesign
+from .cs_reinf_layer import ReinfLayer, BarLayer, FabricLayer
+from .cs_shape import Rectangle, Circle, TShape, IShape, CustomShape

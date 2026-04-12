@@ -4,7 +4,7 @@ from .cs_shape import Rectangle, Circle, TShape, CustomShape, ICrossSectionShape
 from bmcs_utils.api import Model, Item, View, Float, EitherType, Instance
 import traits.api as tr
 import bmcs_utils.api as bu
-from scite.matmod import ConcreteMatMod
+from scite.matmod.legacy import ConcreteMatMod
 
 class CrossSectionDesign(Model):
     name = 'Cross Section Design'

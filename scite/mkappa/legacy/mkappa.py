@@ -2,7 +2,7 @@ import numpy as np
 import sympy as sp
 import traits.api as tr
 
-from scite.cs_design import CrossSectionDesign
+from scite.cs_design.legacy.cs_design import CrossSectionDesign
 from scipy.optimize import root
 from bmcs_utils.api import \
     Model, Instance, Item, View, mpl_align_xaxis, SymbExpr, \

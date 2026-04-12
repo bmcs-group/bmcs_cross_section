@@ -3,7 +3,7 @@ from matplotlib import pyplot as plt
 from matplotlib.ticker import PercentFormatter
 
 from .mkappa import MKappa
-from ..norms.ec2 import EC2
+from scite.norms.ec2 import EC2
 
 
 class MKappaRho(MKappa):

@@ -21,9 +21,7 @@ warnings.warn(
     stacklevel=2
 )
 
-# Legacy imports (if needed for backward compatibility)
-# Uncomment only if absolutely necessary
-# from .matmod import MatMod
-# from .reinforcement import ReinfMatMod, SteelReinfMatMod, CarbonReinfMatMod
-# from .concrete_old import ConcreteMatMod, PWLConcreteMatMod
-# from .sz_advanced import SZAdvanced
+# Legacy exports for backward compatibility
+from .matmod import MatMod
+from .reinforcement import ReinfMatMod, SteelReinfMatMod, CarbonReinfMatMod
+from .concrete_old import ConcreteMatMod

@@ -45,6 +45,8 @@ notebook = [
 legacy = [
     "bmcs_utils",
     "traits>=6.3",  # Only needed for legacy/pullout/analytical_solutions modules
+    "anastruct",    # Required by scite.beam structural system analysis
+    "shapely",      # Required by anastruct
 ]
 
 # Development tools
