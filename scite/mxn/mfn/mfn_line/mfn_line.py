@@ -100,7 +100,7 @@ class MFnLineArray(HasTraits):
         _xdata = self.xdata
         _ydata = self.ydata
         # integral under the stress strain curve
-        return np.trapz(_ydata, _xdata)
+        return np.trapezoid(_ydata, _xdata)
 
     def clear(self):
         self.xdata = np.array([])

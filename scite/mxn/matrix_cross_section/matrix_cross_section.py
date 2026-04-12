@@ -156,14 +156,14 @@ class MatrixCrossSection(CrossSectionComponent):
     '''
     @cached_property
     def _get_N(self):
-        return np.trapz(self.f_ti_arr, self.z_ti_arr)
+        return np.trapezoid(self.f_ti_arr, self.z_ti_arr)
 
     M = Property(depends_on=STATE_LAW_AND_GEOMETRY_CHANGE)
     '''Get the resulting moment evaluated with respect to the center line
     '''
     @cached_property
     def _get_M(self):
-        return np.trapz(self.f_ti_arr * self.z_ti_arr, self.z_ti_arr)
+        return np.trapezoid(self.f_ti_arr * self.z_ti_arr, self.z_ti_arr)
 
     #===============================================================================
     # Plotting functions

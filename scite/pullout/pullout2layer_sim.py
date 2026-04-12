@@ -87,7 +87,7 @@ class PulloutRecord(Vis2D):
         P_t, _, w_L = self.sim.get_Pw_t()
         W_t = []
         for i, _ in enumerate(w_L):
-            W_t.append(np.trapz(P_t[:i + 1], w_L[:i + 1]))
+            W_t.append(np.trapezoid(P_t[:i + 1], w_L[:i + 1]))
         return W_t
 
     def get_dG_t(self):

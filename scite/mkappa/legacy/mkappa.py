@@ -179,7 +179,7 @@ class MKappa(Model, InjectSymbExpr):
         z_tm = self.z_m[np.newaxis, :]
         b_z_m = self.cross_section_shape_.get_b(z_tm)
         N_z_tm2 = b_z_m * self.get_sig_c_z(kappa_t, eps_bot_t, z_tm)
-        return np.trapz(N_z_tm2, x=z_tm, axis=-1)
+        return np.trapezoid(N_z_tm2, x=z_tm, axis=-1)
         # Slightly faster option but first and last value will be slightly higher here
         # return np.sum(N_z_tm2 * self.cross_section_shape_.H/self.n_kappa, axis=1)
 
@@ -287,7 +287,7 @@ class MKappa(Model, InjectSymbExpr):
         z_tm = self.z_m[np.newaxis, :]
         b_z_m = self.cross_section_shape_.get_b(z_tm)
         N_z_tm2 = b_z_m * self.get_sig_c_z(self.kappa_t, self.eps_bot_sol_t, z_tm)
-        return np.trapz(N_z_tm2 * z_tm, x=z_tm, axis=-1)
+        return np.trapezoid(N_z_tm2 * z_tm, x=z_tm, axis=-1)
         # Slightly faster option but first and last value will be slightly higher here
         # return np.sum(N_z_tm2 * z_tm * self.cross_section_shape_.H/self.n_kappa, axis=1)
 

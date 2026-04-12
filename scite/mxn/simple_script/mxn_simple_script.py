@@ -49,13 +49,13 @@ def get_NM(eps_lower, eps_upper):
     stress_r = Sig_reinf(strain_r)
 
     # normal force - matrix
-    N_m = np.trapz(stress_y * width, y_coord)
+    N_m = np.trapezoid(stress_y * width, y_coord)
     # normal force - reinforcement
     N_r = np.sum(stress_r * reinf_area)
     N = N_m + N_r
 
     # moment - matrix
-    M_m = np.trapz(stress_y * width * (y_coord - gravity_center), y_coord)
+    M_m = np.trapezoid(stress_y * width * (y_coord - gravity_center), y_coord)
     # moment - reinforcement
     M_r = np.sum(stress_r * reinf_area * (reinf_y_coord - gravity_center))
     M = M_m + M_r
