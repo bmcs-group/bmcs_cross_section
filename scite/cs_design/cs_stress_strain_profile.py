@@ -123,6 +123,7 @@ class StressStrainProfile:
             if layer_index >= len(self.cs.reinforcement.layers):
                 raise ValueError(f"Layer {layer_index} out of range")
             
+            # layer.z is distance from BOTTOM; kappa = (eps_s1 - eps_top) / (h - z_s)
             z_s = self.cs.reinforcement.layers[layer_index].z
             self.kappa = (eps_s1 - eps_top) / (h - z_s)
             self.eps_bottom = eps_top + self.kappa * h

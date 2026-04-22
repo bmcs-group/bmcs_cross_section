@@ -137,12 +137,19 @@ class MKappaAnalysis(BMCSModel):
             F_c, F_s, N_total, M_total = profile.get_force_resultants()
             return (N_total / 1000.0) - self.N_Ed  # N_total - N_Ed = 0
 
-        # Search bounds for eps_bot
-        # With axial compression (N_Ed < 0), section may have compression at bottom
-        # With axial tension (N_Ed > 0), section likely has tension at bottom
-        # Use wider bounds to accommodate different loading conditions
-        eps_bot_min = -0.020  # Compression at bottom (wider for N_Ed < 0)
-        eps_bot_max = 0.030  # Tension at bottom (wider for N_Ed > 0)
+        # Search bounds for eps_bot.
+        # eps_bot_max must keep all reinforcement strains inside the valid stress range
+        # (i.e. below the steel's ultimate strain eps_ud), otherwise the steel force
+        # drops to zero, the residual becomes 0 trivially, and brentq lands on the
+        # degenerate boundary solution N = M = 0.
+        eps_bot_min = -0.020  # Compression at bottom
+
+        # Compute upper bound from the most-tensile reinforcement layer
+        eps_bot_max = 0.020   # conservative fallback
+        for layer in self.cs.reinforcement.layers:
+            eps_ud_layer = getattr(layer.material, 'eps_ud', 0.025)
+            # At this eps_bot the steel strain equals 0.99 * eps_ud (just below failure)
+            eps_bot_max = max(eps_bot_max, 0.99 * eps_ud_layer + kappa * layer.z)
 
         # Check if residual has opposite signs at bounds (required for brentq)
         r_min = residual(eps_bot_min)
@@ -348,7 +355,8 @@ def create_default_mkappa(N_Ed: float = 0.0) -> MKappaAnalysis:
     Returns:
         MKappaAnalysis with rectangular section and standard reinforcement
     """
-    from scite.cs_design.reinforcement import ReinforcementLayer, ReinforcementLayout
+    from scite.cs_design.reinforcement import (ReinforcementLayer,
+                                               ReinforcementLayout)
     from scite.cs_design.shapes import RectangularShape
     from scite.matmod.ec2_parabola_rectangle import EC2ParabolaRectangle
     from scite.matmod.steel_reinforcement import SteelReinforcement
