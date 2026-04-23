@@ -1,0 +1,172 @@
+{
+  "catalog_name": "concrete",
+  "created": "2026-01-11T14:11:23.809516",
+  "records": [
+    {
+      "product_id": "CONCRETE-EC2-C12/15",
+      "name": "Concrete C12/15",
+      "strength_class": "C12/15",
+      "f_ck": 12,
+      "f_cm": 20,
+      "f_cd": 8.0,
+      "E_cm": 27000,
+      "gamma_c": 1.5,
+      "alpha_cc": 1.0
+    },
+    {
+      "product_id": "CONCRETE-EC2-C16/20",
+      "name": "Concrete C16/20",
+      "strength_class": "C16/20",
+      "f_ck": 16,
+      "f_cm": 24,
+      "f_cd": 10.666666666666666,
+      "E_cm": 29000,
+      "gamma_c": 1.5,
+      "alpha_cc": 1.0
+    },
+    {
+      "product_id": "CONCRETE-EC2-C20/25",
+      "name": "Concrete C20/25",
+      "strength_class": "C20/25",
+      "f_ck": 20,
+      "f_cm": 28,
+      "f_cd": 13.333333333333334,
+      "E_cm": 30000,
+      "gamma_c": 1.5,
+      "alpha_cc": 1.0
+    },
+    {
+      "product_id": "CONCRETE-EC2-C25/30",
+      "name": "Concrete C25/30",
+      "strength_class": "C25/30",
+      "f_ck": 25,
+      "f_cm": 33,
+      "f_cd": 16.666666666666668,
+      "E_cm": 31000,
+      "gamma_c": 1.5,
+      "alpha_cc": 1.0
+    },
+    {
+      "product_id": "CONCRETE-EC2-C30/37",
+      "name": "Concrete C30/37",
+      "strength_class": "C30/37",
+      "f_ck": 30,
+      "f_cm": 38,
+      "f_cd": 20.0,
+      "E_cm": 33000,
+      "gamma_c": 1.5,
+      "alpha_cc": 1.0
+    },
+    {
+      "product_id": "CONCRETE-EC2-C35/45",
+      "name": "Concrete C35/45",
+      "strength_class": "C35/45",
+      "f_ck": 35,
+      "f_cm": 43,
+      "f_cd": 23.333333333333332,
+      "E_cm": 34000,
+      "gamma_c": 1.5,
+      "alpha_cc": 1.0
+    },
+    {
+      "product_id": "CONCRETE-EC2-C40/50",
+      "name": "Concrete C40/50",
+      "strength_class": "C40/50",
+      "f_ck": 40,
+      "f_cm": 48,
+      "f_cd": 26.666666666666668,
+      "E_cm": 35000,
+      "gamma_c": 1.5,
+      "alpha_cc": 1.0
+    },
+    {
+      "product_id": "CONCRETE-EC2-C45/55",
+      "name": "Concrete C45/55",
+      "strength_class": "C45/55",
+      "f_ck": 45,
+      "f_cm": 53,
+      "f_cd": 30.0,
+      "E_cm": 36000,
+      "gamma_c": 1.5,
+      "alpha_cc": 1.0
+    },
+    {
+      "product_id": "CONCRETE-EC2-C50/60",
+      "name": "Concrete C50/60",
+      "strength_class": "C50/60",
+      "f_ck": 50,
+      "f_cm": 58,
+      "f_cd": 33.333333333333336,
+      "E_cm": 37000,
+      "gamma_c": 1.5,
+      "alpha_cc": 1.0
+    },
+    {
+      "product_id": "CONCRETE-EC2-C55/67",
+      "name": "Concrete C55/67",
+      "strength_class": "C55/67",
+      "f_ck": 55,
+      "f_cm": 63,
+      "f_cd": 36.666666666666664,
+      "E_cm": 38000,
+      "gamma_c": 1.5,
+      "alpha_cc": 1.0
+    },
+    {
+      "product_id": "CONCRETE-EC2-C60/75",
+      "name": "Concrete C60/75",
+      "strength_class": "C60/75",
+      "f_ck": 60,
+      "f_cm": 68,
+      "f_cd": 40.0,
+      "E_cm": 39000,
+      "gamma_c": 1.5,
+      "alpha_cc": 1.0
+    },
+    {
+      "product_id": "CONCRETE-EC2-C70/85",
+      "name": "Concrete C70/85",
+      "strength_class": "C70/85",
+      "f_ck": 70,
+      "f_cm": 78,
+      "f_cd": 46.666666666666664,
+      "E_cm": 41000,
+      "gamma_c": 1.5,
+      "alpha_cc": 1.0
+    },
+    {
+      "product_id": "CONCRETE-EC2-C80/95",
+      "name": "Concrete C80/95",
+      "strength_class": "C80/95",
+      "f_ck": 80,
+      "f_cm": 88,
+      "f_cd": 53.333333333333336,
+      "E_cm": 42000,
+      "gamma_c": 1.5,
+      "alpha_cc": 1.0
+    },
+    {
+      "product_id": "CONCRETE-EC2-C90/105",
+      "name": "Concrete C90/105",
+      "strength_class": "C90/105",
+      "f_ck": 90,
+      "f_cm": 98,
+      "f_cd": 60.0,
+      "E_cm": 44000,
+      "gamma_c": 1.5,
+      "alpha_cc": 1.0
+    }
+  ],
+  "columns": [
+    "product_id",
+    "name",
+    "strength_class",
+    "f_ck",
+    "f_cm",
+    "f_cd",
+    "E_cm",
+    "gamma_c",
+    "alpha_cc"
+  ],
+  "count": 14
+}

@@ -1,0 +1,144 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "scite"
+version = "0.1.0"
+description = "Models of brittle-concrete composite cross sections"
+readme = "README.md"
+authors = [
+    {name = "BMCS-Group", email = "rostislav.chudoba@rwth-aachen.de"}
+]
+license = {text = "MIT"}
+requires-python = ">=3.8"
+classifiers = [
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+keywords = ["structural engineering", "cross section", "moment curvature", "concrete", "composite materials"]
+
+# Core dependencies - minimal set for computation and Streamlit frontend
+dependencies = [
+    "numpy>=1.20",  # Supports both 1.x and 2.x with compatibility helpers
+    "scipy>=1.7",
+    "sympy>=1.9",
+    "matplotlib>=3.3",
+    "streamlit>=1.28",
+    "pydantic>=2.0",
+]
+
+[project.optional-dependencies]
+# Development and notebook dependencies
+notebook = [
+    "jupyter>=1.0",
+    "ipywidgets>=7.6",
+    "ipympl>=0.8",
+]
+
+# Legacy dependencies for old traits-based GUI modules
+legacy = [
+    "bmcs_utils",
+    "traits>=6.3",  # Only needed for legacy/pullout/analytical_solutions modules
+    "anastruct",    # Required by scite.beam structural system analysis
+    "shapely",      # Required by anastruct
+]
+
+# Development tools
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=3.0",
+    "black>=22.0",
+    "ruff>=0.0.260",
+    "mypy>=0.990",
+]
+
+# All optional dependencies
+all = [
+    "scite[notebook,legacy,dev]",
+]
+
+[project.urls]
+Homepage = "https://github.com/bmcs-group/bmcs_cross_section"
+Documentation = "https://bmcs-group.github.io/bmcs_cross_section"
+Repository = "https://github.com/bmcs-group/bmcs_cross_section"
+Issues = "https://github.com/bmcs-group/bmcs_cross_section/issues"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["scite*"]
+exclude = ["tests*", "notebooks*", "build*", "dist*"]
+
+[tool.setuptools.package-data]
+scite = ["py.typed"]
+
+# Black configuration
+[tool.black]
+line-length = 100
+target-version = ['py38', 'py39', 'py310', 'py311']
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+  # directories
+  \.eggs
+  | \.git
+  | \.hg
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | build
+  | dist
+  | __pycache__
+)/
+'''
+
+# Ruff configuration (modern, fast linter/formatter)
+[tool.ruff]
+line-length = 100
+target-version = "py38"
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "B",   # flake8-bugbear
+    "C4",  # flake8-comprehensions
+    "UP",  # pyupgrade
+]
+ignore = [
+    "E501",  # line too long (handled by black)
+    "B008",  # do not perform function calls in argument defaults
+    "C901",  # too complex
+]
+
+[tool.ruff.per-file-ignores]
+"__init__.py" = ["F401"]  # imported but unused
+
+# MyPy configuration
+[tool.mypy]
+python_version = "3.8"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false  # Gradually enable
+ignore_missing_imports = true
+exclude = [
+    "build",
+    "dist",
+    "notebooks",
+]
+
+# Pytest configuration
+[tool.pytest.ini_options]
+minversion = "7.0"
+addopts = "-ra -q --strict-markers"
+testpaths = [
+    "tests",
+]
+pythonpath = [
+    "."
+]
