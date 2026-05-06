@@ -219,49 +219,70 @@ class SteelReinforcement(BMCSModel):
         """Get appropriate strain range for plotting"""
         eps_max = self.eps_ud * 1.1
         return (-eps_max, eps_max)
-    
+
+    def plotly_figure(self):
+        """Return a plotly Figure of the symmetric bilinear stress-strain curve."""
+        import plotly.graph_objects as go
+
+        eps_min, eps_max = self.get_plot_range()
+        eps = np.linspace(eps_min, eps_max, 500)
+        sig = self.get_sig(eps)
+
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(
+            x=eps.tolist(), y=sig.tolist(),
+            mode="lines", name="Steel (design)",
+            line=dict(color="#1f77b4", width=2),
+        ))
+        # Yield points
+        fig.add_trace(go.Scatter(
+            x=[self.eps_yd, -self.eps_yd], y=[self.f_yd, -self.f_yd],
+            mode="markers+text", name=f"Yield  f_yd={self.f_yd:.0f} MPa",
+            marker=dict(color="orange", size=10, symbol="circle"),
+            text=[f"f_yd={self.f_yd:.0f}", None], textposition="top right",
+        ))
+        # Ultimate points
+        fig.add_trace(go.Scatter(
+            x=[self.eps_ud, -self.eps_ud], y=[self.f_td, -self.f_td],
+            mode="markers+text", name=f"Ultimate  f_td={self.f_td:.0f} MPa",
+            marker=dict(color="red", size=10, symbol="square"),
+            text=[f"f_td={self.f_td:.0f}", None], textposition="top right",
+        ))
+        fig.add_hline(y=0, line=dict(color="black", width=0.5))
+        fig.add_vline(x=0, line=dict(color="black", width=0.5))
+        fig.update_layout(
+            title=f"Steel Reinforcement  f_yk={self.f_yk:.0f} MPa,  f_yd={self.f_yd:.0f} MPa",
+            xaxis_title="Strain ε [-]",
+            yaxis_title="Stress σ [MPa]",
+            legend=dict(x=0.01, y=0.99, xanchor="left", yanchor="top"),
+            margin=dict(l=60, r=20, t=50, b=50),
+        )
+        return fig
+
     def plot_stress_strain(
-        self, 
-        ax, 
+        self,
+        ax,
         n_points: int = 500,
-        show_key_points: bool = True
+        show_key_points: bool = True,
     ):
-        """
-        Plot stress-strain curve on given axes.
-        
-        Args:
-            ax: Matplotlib axes
-            n_points: Number of points for smooth curve
-            show_key_points: Whether to mark yield and ultimate points
-        """
+        """Plot stress-strain curve on given axes (matplotlib, legacy)."""
         eps_min, eps_max = self.get_plot_range()
         eps = np.linspace(eps_min, eps_max, n_points)
         sig = self.get_sig(eps)
-        
-        # Main curve
         ax.plot(eps, sig, 'b-', linewidth=2, label='σ-ε curve (design)')
-        
-        # Key points
         if show_key_points:
-            # Yield points
-            ax.plot([self.eps_yd, -self.eps_yd], 
-                   [self.f_yd, -self.f_yd],
-                   'ro', markersize=8, label=f'Yield: ε_yd={self.eps_yd:.4f}')
-            
-            # Ultimate points
-            ax.plot([self.eps_ud, -self.eps_ud],
-                   [self.f_td, -self.f_td],
-                   'rs', markersize=8, label=f'Ultimate: ε_ud={self.eps_ud:.4f}')
-        
-        # Axes and labels
+            ax.plot([self.eps_yd, -self.eps_yd], [self.f_yd, -self.f_yd],
+                    'ro', markersize=8, label=f'Yield: ε_yd={self.eps_yd:.4f}')
+            ax.plot([self.eps_ud, -self.eps_ud], [self.f_td, -self.f_td],
+                    'rs', markersize=8, label=f'Ultimate: ε_ud={self.eps_ud:.4f}')
         ax.axhline(y=0, color='k', linestyle='-', linewidth=0.5)
         ax.axvline(x=0, color='k', linestyle='-', linewidth=0.5)
         ax.set_xlabel('Strain ε [-]')
         ax.set_ylabel('Stress σ [MPa]')
-        ax.set_title(f'Steel Reinforcement: f_yk={self.f_yk:.0f} MPa, f_yd={self.f_yd:.0f} MPa, γ_s={self.gamma_s:.2f}')
+        ax.set_title(f'Steel Reinforcement: f_yk={self.f_yk:.0f} MPa, f_yd={self.f_yd:.0f} MPa')
         ax.legend()
         ax.grid(True, alpha=0.3)
-    
+
     def summary(self) -> dict:
         """Return summary of material properties"""
         return {

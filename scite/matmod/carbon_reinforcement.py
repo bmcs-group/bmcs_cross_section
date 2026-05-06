@@ -124,25 +124,13 @@ class CarbonReinforcement(BMCSModel):
     
     def plot_stress_strain(
         self,
-        ax: Optional[plt.Axes] = None,
+        ax=None,
         show_limits: bool = True,
         color: str = 'darkred',
         alpha_fill: float = 0.1,
-        label: Optional[str] = None
-    ) -> plt.Axes:
-        """
-        Plot stress-strain curve.
-        
-        Args:
-            ax: Matplotlib axes (creates new if None)
-            show_limits: Show characteristic points
-            color: Curve color
-            alpha_fill: Fill transparency
-            label: Legend label
-            
-        Returns:
-            Matplotlib axes
-        """
+        label=None,
+    ):
+        """Plot stress-strain curve (matplotlib, legacy)."""
         if ax is None:
             fig, ax = plt.subplots(figsize=(8, 5))
         
@@ -170,8 +158,45 @@ class CarbonReinforcement(BMCSModel):
         ax.set_ylabel('Stress σ [MPa]')
         ax.grid(True, alpha=0.3)
         ax.legend()
-        
+
         return ax
+
+    def plotly_figure(self):
+        """Return a plotly Figure of the stress-strain curve."""
+        import plotly.graph_objects as go
+
+        eps_range = self.get_eps_plot_range()
+        sig_range = self.get_sig(eps_range)
+        eps_perm = (eps_range * 1000).tolist()
+        sig_list = sig_range.tolist()
+
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(
+            x=eps_perm, y=sig_list,
+            mode="lines", name=f"Carbon FRP  f_t={self.f_t:.0f} MPa",
+            fill="tozeroy", fillcolor="rgba(139,0,0,0.08)",
+            line=dict(color="darkred", width=2),
+        ))
+        # Failure point
+        fig.add_trace(go.Scatter(
+            x=[self.eps_cr * 1000], y=[self.f_t_scaled],
+            mode="markers+text",
+            name=f"Failure  ε={self.eps_cr * 1000:.2f}‰",
+            marker=dict(color="darkred", size=10, symbol="circle"),
+            text=[f"f_t={self.f_t_scaled:.0f}"], textposition="top right",
+        ))
+        fig.add_vline(x=self.eps_end * 1000,
+                      line=dict(color="darkred", dash="dash", width=1),
+                      annotation_text="ε_end", annotation_position="top right")
+        fig.add_hline(y=0, line=dict(color="black", width=0.5))
+        fig.update_layout(
+            title=f"Carbon FRP  E={self.E:.0f} MPa,  f_t={self.f_t:.0f} MPa",
+            xaxis_title="Strain ε [‰]",
+            yaxis_title="Stress σ [MPa]",
+            legend=dict(x=0.01, y=0.99, xanchor="left", yanchor="top"),
+            margin=dict(l=60, r=20, t=50, b=50),
+        )
+        return fig
 
 
 def create_carbon(

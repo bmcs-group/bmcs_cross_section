@@ -272,7 +272,46 @@ class EC2ParabolaRectangle(BMCSModel):
     def get_plot_range(self) -> tuple[float, float]:
         """Get recommended strain range for plotting"""
         return (1.5 * self.eps_cu2_computed, 0.001)
-    
+
+    def plotly_figure(self):
+        """Return a plotly Figure of the stress-strain curve (compression-only)."""
+        import plotly.graph_objects as go
+
+        eps_min, eps_max = self.get_plot_range()
+        eps = np.linspace(eps_min, eps_max, 500)
+        sig = self.get_sig(eps)
+
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(
+            x=eps.tolist(), y=sig.tolist(),
+            mode="lines", name="EC2 Parabola-Rectangle",
+            line=dict(color="#1f77b4", width=2),
+        ))
+        # Key points
+        fig.add_trace(go.Scatter(
+            x=[self.eps_c2_computed], y=[-self.f_cd],
+            mode="markers+text", name=f"Peak  ε_c2={self.eps_c2_computed:.4f}",
+            marker=dict(color="red", size=10, symbol="circle"),
+            text=[f"ε_c2={self.eps_c2_computed:.4f}"], textposition="top right",
+        ))
+        fig.add_trace(go.Scatter(
+            x=[self.eps_cu2_computed],
+            y=[float(self.get_sig(np.array([self.eps_cu2_computed]))[0])],
+            mode="markers+text", name=f"Ultimate  ε_cu2={self.eps_cu2_computed:.4f}",
+            marker=dict(color="red", size=10, symbol="square"),
+            text=[f"ε_cu2={self.eps_cu2_computed:.4f}"], textposition="top left",
+        ))
+        fig.add_hline(y=0, line=dict(color="black", width=0.5))
+        fig.add_vline(x=0, line=dict(color="black", width=0.5))
+        fig.update_layout(
+            title=f"EC2 Parabola-Rectangle  f_cd = {self.f_cd:.2f} MPa  (f_ck = {self.f_ck:.0f} MPa)",
+            xaxis_title="Strain ε [-]",
+            yaxis_title="Stress σ [MPa]",
+            legend=dict(x=0.01, y=0.99, xanchor="left", yanchor="top"),
+            margin=dict(l=60, r=20, t=50, b=50),
+        )
+        return fig
+
     # -------------------------------------------------------------------------
     # Information
     # -------------------------------------------------------------------------

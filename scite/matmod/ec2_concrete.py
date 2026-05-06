@@ -317,7 +317,54 @@ class EC2Concrete(BMCSModel):
     def get_plot_range(self) -> tuple[float, float]:
         """Get recommended strain range for plotting"""
         return (1.5 * self.eps_cu1, 3.0 * self.eps_tu_computed)
-    
+
+    def plotly_figure(self):
+        """Return a plotly Figure of the stress-strain curve (compression + tension)."""
+        import plotly.graph_objects as go
+
+        eps_min, eps_max = self.get_plot_range()
+        eps = np.linspace(eps_min, eps_max, 500)
+        sig = self.get_sig(eps)
+
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(
+            x=eps.tolist(), y=sig.tolist(),
+            mode="lines", name="EC2 Concrete",
+            line=dict(color="#1f77b4", width=2),
+        ))
+        # Compression peak
+        fig.add_trace(go.Scatter(
+            x=[self.eps_c1], y=[-self.factor * self.f_cm],
+            mode="markers+text", name=f"Peak  σ={self.f_cm:.1f} MPa",
+            marker=dict(color="red", size=10, symbol="circle"),
+            text=[f"σ_peak={self.f_cm:.1f}"], textposition="top right",
+        ))
+        # Ultimate compressive strain
+        fig.add_trace(go.Scatter(
+            x=[self.eps_cu1],
+            y=[float(self.get_sig(np.array([self.eps_cu1]))[0])],
+            mode="markers+text", name=f"ε_cu1={self.eps_cu1:.4f}",
+            marker=dict(color="red", size=10, symbol="square"),
+            text=[f"ε_cu1={self.eps_cu1:.4f}"], textposition="bottom right",
+        ))
+        # Crack point
+        fig.add_trace(go.Scatter(
+            x=[self.eps_cr_computed], y=[self.factor * self.f_ctm],
+            mode="markers+text", name=f"Crack  ε_cr={self.eps_cr_computed:.5f}",
+            marker=dict(color="green", size=10, symbol="diamond"),
+            text=[f"f_ctm={self.f_ctm:.2f}"], textposition="top right",
+        ))
+        fig.add_hline(y=0, line=dict(color="black", width=0.5))
+        fig.add_vline(x=0, line=dict(color="black", width=0.5))
+        fig.update_layout(
+            title=f"EC2 Concrete  f_cm = {self.f_cm:.1f} MPa  (μ = {self.mu:.2f})",
+            xaxis_title="Strain ε [-]",
+            yaxis_title="Stress σ [MPa]",
+            legend=dict(x=0.01, y=0.99, xanchor="left", yanchor="top"),
+            margin=dict(l=60, r=20, t=50, b=50),
+        )
+        return fig
+
     # -------------------------------------------------------------------------
     # Information
     # -------------------------------------------------------------------------
