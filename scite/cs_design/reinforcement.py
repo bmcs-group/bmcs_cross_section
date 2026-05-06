@@ -12,9 +12,11 @@ from typing import Any, List, Optional, Union
 import numpy as np
 import numpy.typing as npt
 from pydantic import field_validator
-
 from scite.core import BMCSModel, ui_field
+from scite.matmod.carbon_reinforcement import CarbonReinforcement
 from scite.matmod.steel_reinforcement import SteelReinforcement, create_steel
+
+ReinforcementMaterial = Union[SteelReinforcement, CarbonReinforcement]
 
 
 def to_scalar(val):
@@ -38,7 +40,7 @@ class ReinforcementLayer(BMCSModel):
     Attributes:
         z: Distance from top of cross-section [mm]
         A_s: Total steel area in this layer [mm²]
-        material: Steel material model (SteelReinforcement)
+        material: Reinforcement material model (SteelReinforcement or CarbonReinforcement)
         name: Optional layer identifier
     """
     
@@ -62,7 +64,7 @@ class ReinforcementLayer(BMCSModel):
         ge=0.0
     )
     
-    material: Optional[SteelReinforcement] = None
+    material: Optional[ReinforcementMaterial] = None
     name: Optional[str] = None
     
     def model_post_init(self, __context) -> None:

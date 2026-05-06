@@ -48,3 +48,10 @@ geckodriver.log
 
 # Catalog cache (runtime generated)
 scite/cs_components/.catalog_cache/
+
+# Virtual environments
+venv/
+.venv/
+
+# Generated files
+generated/

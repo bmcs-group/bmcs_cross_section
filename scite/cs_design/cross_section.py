@@ -10,18 +10,20 @@ The key method get_N_M(kappa, eps_top) computes axial force and moment
 for a given strain distribution, which is the interface mkappa will use.
 """
 
-from typing import Optional
+from typing import Optional, Union
 
 import matplotlib.pyplot as plt
 import numpy as np
 import numpy.typing as npt
 from matplotlib.patches import Polygon
 from matplotlib.patches import Rectangle as MPLRectangle
-
 from scite.core import BMCSModel, ui_field
 from scite.cs_design.reinforcement import ReinforcementLayout
 from scite.cs_design.shapes import IShape, RectangularShape, TShape
+from scite.matmod.ec2_concrete import EC2Concrete
 from scite.matmod.ec2_parabola_rectangle import EC2ParabolaRectangle
+
+ConcreteMaterial = Union[EC2ParabolaRectangle, EC2Concrete]
 
 
 def to_scalar(val):
@@ -58,7 +60,7 @@ class CrossSection(BMCSModel):
     """
     
     shape: RectangularShape | TShape | IShape
-    concrete: EC2ParabolaRectangle
+    concrete: ConcreteMaterial
     reinforcement: ReinforcementLayout
     
     n_points: int = ui_field(

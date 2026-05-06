@@ -9,11 +9,11 @@ References:
     EN 1992-1-1:2004 (Eurocode 2), Section 3.1.5 and Table 3.1
 """
 
-import numpy as np
-import sympy as sp
 from functools import cached_property
 from typing import Optional
 
+import numpy as np
+import sympy as sp
 from scite.core import BMCSModel, ui_field
 from scite.core.symbolic import SymbolicExpression
 
@@ -169,6 +169,11 @@ class EC2Concrete(BMCSModel):
         """Ultimate tensile strain (computed or specified) [-]"""
         return self.eps_tu if self.eps_tu is not None else self.eps_cr_computed
     
+    @cached_property
+    def eps_cu2_computed(self) -> float:
+        """Ultimate compressive strain (alias for eps_cu1, for API compatibility with EC2ParabolaRectangle)."""
+        return self.eps_cu1
+
     @cached_property
     def k(self) -> float:
         """EC2 parameter k for compression curve [-]"""

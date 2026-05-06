@@ -5,12 +5,12 @@ Linear elastic-brittle behavior with optional post-peak softening
 for numerical stability in nonlinear analysis.
 """
 
+from typing import Optional
+
+import matplotlib.pyplot as plt
 import numpy as np
 import numpy.typing as npt
 from pydantic import Field, field_validator
-import matplotlib.pyplot as plt
-from typing import Optional
-
 from scite.core import BMCSModel
 
 
@@ -74,6 +74,11 @@ class CarbonReinforcement(BMCSModel):
     def eps_end(self) -> float:
         """End of post-peak softening strain [-]."""
         return (1 + 1.0 / self.post_peak_factor) * self.eps_cr
+
+    @property
+    def E_s(self) -> float:
+        """Elastic modulus alias (compatibility with SteelReinforcement interface) [MPa]."""
+        return self.E
     
     def get_sig(self, eps: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
         """
@@ -111,7 +116,7 @@ class CarbonReinforcement(BMCSModel):
         
         # Beyond ε_end: σ = 0 (already initialized to zero)
         
-        return sig if sig.shape[0] > 1 else sig[0]
+        return sig
     
     def get_eps_plot_range(self) -> npt.NDArray[np.float64]:
         """Get strain range for plotting."""
@@ -236,4 +241,5 @@ if __name__ == '__main__':
     ax2.legend()
     
     plt.tight_layout()
+    plt.show()
     plt.show()
