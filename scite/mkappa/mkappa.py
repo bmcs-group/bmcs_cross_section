@@ -363,8 +363,7 @@ def create_default_mkappa(N_Ed: float = 0.0) -> MKappaAnalysis:
     Returns:
         MKappaAnalysis with rectangular section and standard reinforcement
     """
-    from scite.cs_design.reinforcement import (ReinforcementLayer,
-                                               ReinforcementLayout)
+    from scite.cs_design.reinforcement import ReinforcementLayer, ReinforcementLayout
     from scite.cs_design.shapes import RectangularShape
     from scite.matmod.ec2_parabola_rectangle import EC2ParabolaRectangle
     from scite.matmod.steel_reinforcement import SteelReinforcement

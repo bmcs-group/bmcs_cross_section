@@ -14,6 +14,7 @@ from typing import Optional
 
 import numpy as np
 import sympy as sp
+
 from scite.core import BMCSModel, ui_field
 from scite.core.symbolic import SymbolicExpression
 
