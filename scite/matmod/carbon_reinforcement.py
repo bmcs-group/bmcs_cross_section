@@ -11,6 +11,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import numpy.typing as npt
 from pydantic import Field, field_validator
+
 from scite.core import BMCSModel
 
 
@@ -74,6 +75,11 @@ class CarbonReinforcement(BMCSModel):
     def eps_end(self) -> float:
         """End of post-peak softening strain [-]."""
         return (1 + 1.0 / self.post_peak_factor) * self.eps_cr
+
+    @property
+    def eps_ud(self) -> float:
+        """Design ultimate strain for solver bounds (= peak strain eps_cr)."""
+        return self.eps_cr
 
     @property
     def E_s(self) -> float:

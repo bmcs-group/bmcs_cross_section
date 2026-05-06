@@ -137,19 +137,27 @@ class MKappaAnalysis(BMCSModel):
             F_c, F_s, N_total, M_total = profile.get_force_resultants()
             return (N_total / 1000.0) - self.N_Ed  # N_total - N_Ed = 0
 
-        # Search bounds for eps_bot.
-        # eps_bot_max must keep all reinforcement strains inside the valid stress range
-        # (i.e. below the steel's ultimate strain eps_ud), otherwise the steel force
-        # drops to zero, the residual becomes 0 trivially, and brentq lands on the
-        # degenerate boundary solution N = M = 0.
-        eps_bot_min = -0.020  # Compression at bottom
+        h = self.cs.h_total
+        eps_cu = abs(self.cs.concrete.eps_cu2_computed)
 
-        # Compute upper bound from the most-tensile reinforcement layer
-        eps_bot_max = 0.020   # conservative fallback
+        # Lower bound: top fiber at concrete failure strain (NA at top of section).
+        # ε_top = eps_bot - κ·h = -eps_cu  →  eps_bot = -eps_cu + κ·h
+        #
+        # Using a fixed -0.020 is wrong: for small κ it lands the entire section
+        # past concrete failure AND past FRP compression limit → Fc=Fs=0 → N=0
+        # trivially (degenerate root).  brentq picks it immediately, giving M≡0.
+        eps_bot_min = -eps_cu + kappa * h
+        # For significant axial compression allow going somewhat below that limit
+        if self.N_Ed < -100:
+            eps_bot_min -= 0.005
+
+        # Upper bound: for each layer, eps_bot must not push that layer past failure.
+        # ε(z) = eps_bot - κ·z  →  eps_bot ≤ 0.99·eps_ud + κ·z
+        # Take the MIN over all layers so the most-constraining layer wins.
+        eps_bot_max = 0.100   # start high; reduced by layer constraints below
         for layer in self.cs.reinforcement.layers:
             eps_ud_layer = getattr(layer.material, 'eps_ud', 0.025)
-            # At this eps_bot the steel strain equals 0.99 * eps_ud (just below failure)
-            eps_bot_max = max(eps_bot_max, 0.99 * eps_ud_layer + kappa * layer.z)
+            eps_bot_max = min(eps_bot_max, 0.99 * eps_ud_layer + kappa * layer.z)
 
         # Check if residual has opposite signs at bounds (required for brentq)
         r_min = residual(eps_bot_min)
