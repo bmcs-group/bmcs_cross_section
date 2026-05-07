@@ -1,6 +1,8 @@
-from bmcs_utils.api import Model, Int, Item, View, Float
-from scite.beam.beam_config.system.beam_system import BeamSystem
 import numpy as np
+from bmcs_utils.api import Float, Int, Item, Model, View
+
+from scite.beam.beam_config.system.beam_system import BeamSystem
+
 
 class SimpleDistLoadSystem(BeamSystem):
 
@@ -21,7 +23,7 @@ class SimpleDistLoadSystem(BeamSystem):
         self.struct.add_multiple_elements([[0, 0], [self.L, 0]], self.n_x)
         self.struct.add_support_hinged(1)
         self.struct.add_support_roll(self.n_x + 1)
-        elements = np.arange(1, self.n_x + 1)
+        elements = list(range(1, self.n_x + 1))
         self.struct.q_load(q=self.F, element_id=elements)
         self.struct.solve()
 
