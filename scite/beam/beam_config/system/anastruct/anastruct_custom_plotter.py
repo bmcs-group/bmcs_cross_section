@@ -1,9 +1,10 @@
-from anastruct.fem.plotter.mpl import Plotter
-import numpy as np
 import math
-import matplotlib.pyplot as plt  # type: ignore
+
 import matplotlib.patches as mpatches  # type: ignore
+import matplotlib.pyplot as plt  # type: ignore
+import numpy as np
 from anastruct.basic import find_nearest, rotate_xy
+from anastruct.fem.plotter.mpl import Plotter
 from anastruct.fem.plotter.values import (
     PlottingValues,
     det_scaling_factor,
@@ -35,7 +36,7 @@ class CustomPlotter(Plotter):
         width = height = PATCH_SIZE * max_val
         for node in self.system.supports_fixed:
             support_patch = mpatches.Rectangle(
-                (node.vertex.x - width * 0.5, -node.vertex.z - width * 0.5),
+                (node.vertex.x - width * 0.5, -node.vertex.y - width * 0.5),
                 width,
                 height,
                 color="r",
@@ -69,7 +70,7 @@ class CustomPlotter(Plotter):
         width = height = PATCH_SIZE * max_val
         for node in self.system.supports_rotational:
             support_patch = mpatches.Rectangle(
-                (node.vertex.x - width * 0.5, -node.vertex.z - width * 0.5),
+                (node.vertex.x - width * 0.5, -node.vertex.y - width * 0.5),
                 width,
                 height,
                 color="r",
@@ -133,13 +134,13 @@ class CustomPlotter(Plotter):
                     zorder=9,
                 )
                 ax.add_patch(support_patch)
-                y = -node.vertex.z - 2 * radius
+                y = -node.vertex.y - 2 * radius
                 ax.plot(
                     [node.vertex.x - radius, node.vertex.x + radius], [y, y], color="r"
                 )
                 if not rotate:
                     rect_patch = mpatches.Rectangle(
-                        (node.vertex.x - radius / 2, -node.vertex.z - radius / 2),
+                        (node.vertex.x - radius / 2, -node.vertex.y - radius / 2),
                         radius,
                         radius,
                         color="r",
@@ -161,7 +162,7 @@ class CustomPlotter(Plotter):
                 )
                 if not rotate:
                     rect_patch = mpatches.Rectangle(
-                        (node.vertex.x - radius / 2, -node.vertex.z - radius / 2),
+                        (node.vertex.x - radius / 2, -node.vertex.y - radius / 2),
                         radius,
                         radius,
                         color="r",
@@ -217,7 +218,7 @@ class CustomPlotter(Plotter):
 
             # Triangle
             support_patch = mpatches.RegularPolygon(
-                (node.vertex.x, -node.vertex.z - h * 2.6),
+                (node.vertex.x, -node.vertex.y - h * 2.6),
                 numVertices=3,
                 radius=h * 0.9,
                 color="r",
@@ -235,7 +236,7 @@ class CustomPlotter(Plotter):
 
             # Triangle
             support_patch = mpatches.RegularPolygon(
-                (node.vertex.x + h * 1.7, -node.vertex.z - h),
+                (node.vertex.x + h * 1.7, -node.vertex.y - h),
                 numVertices=3,
                 radius=h * 0.9,
                 color="r",
@@ -393,7 +394,7 @@ class CustomPlotter(Plotter):
             if v > 0:
                 ax.plot(
                     node.vertex.x,
-                    -node.vertex.z,
+                    -node.vertex.y,
                     marker=r"$\circlearrowleft$",
                     ms=25,
                     color="orange",
@@ -401,14 +402,14 @@ class CustomPlotter(Plotter):
             else:
                 ax.plot(
                     node.vertex.x,
-                    -node.vertex.z,
+                    -node.vertex.y,
                     marker=r"$\circlearrowright$",
                     ms=25,
                     color="orange",
                 )
             ax.text(
                 node.vertex.x + h * 0.2,
-                -node.vertex.z + h * 0.2,
+                -node.vertex.y + h * 0.2,
                 "T=%d" % v,
                 color="k",
                 fontsize=9,
@@ -444,7 +445,14 @@ class CustomPlotter(Plotter):
         if ax_is_None:
             ax = self.one_fig
 
-        x, y = super().structure()
+        # anastruct >= 1.6: structure() was removed; collect vertices from element_map
+        x_parts, y_parts = [], []
+        for el in self.system.element_map.values():
+            xv, yv = plot_values_element(el)
+            x_parts.extend(xv)
+            y_parts.extend(yv)
+        x = np.array(x_parts)
+        y = np.array(y_parts)
 
         max_x = np.max(x)
         min_x = np.min(x)
@@ -893,7 +901,7 @@ class CustomPlotter(Plotter):
                 if node.Ty > 0:
                     self.one_fig.plot(
                         node.vertex.x,
-                        -node.vertex.z,
+                        -node.vertex.y,
                         marker=r"$\circlearrowleft$",
                         ms=25,
                         color="orange",
@@ -901,7 +909,7 @@ class CustomPlotter(Plotter):
                 if node.Ty < 0:
                     self.one_fig.plot(
                         node.vertex.x,
-                        -node.vertex.z,
+                        -node.vertex.y,
                         marker=r"$\circlearrowright$",
                         ms=25,
                         color="orange",
@@ -910,7 +918,7 @@ class CustomPlotter(Plotter):
                 if verbosity == 0:
                     self.one_fig.text(
                         node.vertex.x + h * 0.2,
-                        -node.vertex.z + h * 0.2,
+                        -node.vertex.y + h * 0.2,
                         "T=%s" % round(node.Ty, 2),
                         color="k",
                         fontsize=9,
