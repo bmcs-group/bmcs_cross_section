@@ -66,10 +66,10 @@ all = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/bmcs-group/bmcs_cross_section"
-Documentation = "https://bmcs-group.github.io/bmcs_cross_section"
-Repository = "https://github.com/bmcs-group/bmcs_cross_section"
-Issues = "https://github.com/bmcs-group/bmcs_cross_section/issues"
+Homepage = "https://github.com/bmcs-group/scite"
+Documentation = "https://bmcs-group.github.io/scite"
+Repository = "https://github.com/bmcs-group/scite"
+Issues = "https://github.com/bmcs-group/scite/issues"
 
 [tool.setuptools.packages.find]
 where = ["."]

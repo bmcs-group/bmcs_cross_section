@@ -1,21 +1,36 @@
-import traits.api as tr
-import numpy as np
+import warnings
 
-from bmcs_utils.api import InteractiveModel, View, Item, Button, ButtonEditor, Float, Int, \
-    mpl_align_yaxis_to_zero, mpl_show_one_legend_for_twin_axes, ParametricStudy
-from bmcs_utils.api import Model, View, Item, Button, Bool, Float, Int, \
-    mpl_align_yaxis, ParametricStudy
-
+warnings.warn(
+    "DeflectionProfile is deprecated; use BeamDeflectionAnalysis instead.",
+    DeprecationWarning,
+    stacklevel=2,
+)
 import bmcs_utils.api as bu
+import matplotlib.gridspec as gridspec
+import numpy as np
+import traits.api as tr
+from bmcs_utils.api import (
+    Bool,
+    Button,
+    ButtonEditor,
+    Float,
+    Int,
+    InteractiveModel,
+    Item,
+    Model,
+    ParametricStudy,
+    View,
+    mpl_align_yaxis,
+    mpl_align_yaxis_to_zero,
+    mpl_show_one_legend_for_twin_axes,
+)
+from scipy.integrate import cumulative_trapezoid as cumtrapz
 
 from scite.beam.beam_config.beam_design import BeamDesign
-from scite.mkappa.legacy.mkappa import MKappa
-from scipy.integrate import cumulative_trapezoid as cumtrapz
-import matplotlib.gridspec as gridspec
-
 from scite.beam.beam_config.boundary_conditions import BoundaryConditions, BoundaryConfig
 from scite.beam.beam_config.system.cantilever_system import CantileverDistLoadSystem
 from scite.beam.beam_config.system.simple_dist_load_system import SimpleDistLoadSystem
+from scite.mkappa.legacy.mkappa import MKappa
 
 
 class DeflectionProfile(Model):
@@ -176,12 +191,19 @@ class DeflectionProfile(Model):
 
     theta_max = Float(1)
 
+    F_max_override = Float(0)
+    '''If > 0, use this value (in N) as F_max instead of computing from mc.
+    Set this from outside to ensure the sweep range matches a known M_R.
+    '''
+
     F_max = tr.Property(Float)
     ''''
     Identify the ultimate limit state based on the maximum moment capacity
     of the cross section.
     '''
     def _get_F_max(self):
+        if self.F_max_override > 0:
+            return self.F_max_override
         M_I, kappa_I = self.mc.inv_M_kappa
         F_max = self.beam_design.system_.get_max_force(M_I)
         return abs(F_max)
@@ -284,7 +306,9 @@ class DeflectionProfile(Model):
         mpl_align_yaxis_to_zero(ax_w, ax_k)
         mpl_show_one_legend_for_twin_axes(ax_w, ax_k)
 
-    def plot_fw_with_fmax(self, ax_Fw, f_max_label = r'$F_{\mathrm{tot,~max}}$', f_max_color='r'):
+    def plot_fw_with_fmax(self, ax_Fw, f_max_label=None, f_max_color='r'):
+        if f_max_label is None:
+            f_max_label = self.beam_design.system_.force_label
         self.plot_fw(ax_Fw)
         self.plot_exp_fw(ax_Fw)
         current_F = abs(self.final_plot_F_scale * self.beam_design.system_.F)
@@ -332,7 +356,8 @@ class DeflectionProfile(Model):
         # TODO: expensive calculations for all displacements are running with each plot update to produce new
         #  load-displacement curve, this shouldn't be done for example when only the force has changed
         ax_Fw.set_xlabel(r'$w_\mathrm{max}$ [mm]')
-        ax_Fw.set_ylabel(r'$F_{\mathrm{tot}}$ [' + self.F_unit + ']')
+        force_label = self.beam_design.system_.force_label
+        ax_Fw.set_ylabel(force_label + ' [' + self.F_unit + ']')
         F, w = self.get_Fw()
         ax_Fw.plot(w, self.final_plot_F_scale * F, '--' if dashed else '-', c=color, label='Sim.' if label is None else label, lw=lw)
 

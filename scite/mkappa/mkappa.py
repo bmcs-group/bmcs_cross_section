@@ -14,6 +14,7 @@ Uses conventions from cs_design and cs_components modules.
 
 from typing import Optional, Tuple
 
+import matplotlib.lines as mlines
 import matplotlib.pyplot as plt
 import numpy as np
 import numpy.typing as npt
@@ -22,6 +23,14 @@ from scipy.optimize import brentq
 from scite.core import BMCSModel, ui_field
 from scite.cs_design.cross_section import CrossSection
 from scite.cs_design.cs_stress_strain_profile import StressStrainProfile
+
+# ── Failure-mode marker styles ──────────────────────────────────────────────
+# Used by plot_mk(show_failure_marker=True) and add_failure_mode_legend().
+_FAILURE_MODE_MARKERS: dict[str, tuple[str, int, str]] = {
+    'concrete':      ('D', 12, 'Concrete crushing (η_c > η_f)'),
+    'reinforcement': ('x', 14, 'CFRP/steel rupture (η_f > η_c)'),
+    'balanced':      ('o', 12, 'Balanced / simultaneous'),
+}
 
 
 class MKappaAnalysis(BMCSModel):
@@ -264,12 +273,87 @@ class MKappaAnalysis(BMCSModel):
         self.M_values = np.array(M_list)
         self.N_values = np.array(N_list)
 
+    def get_failure_mode(self) -> dict:
+        """
+        Identify the governing failure mode at the peak moment.
+
+        Compares strain utilisation for each material at the M-peak state:
+
+            eta_c = |eps_top| / |eps_cu|      (concrete compression fibre)
+            eta_f = eps_bot  /  eps_ud        (main reinforcement tensile fibre)
+
+        The material whose strain is closer to its limit at M-peak is the
+        governing component. This criterion is independent of the constitutive
+        law shape and remains valid for EC2 parabola-rectangle, nonlinear, and
+        bilinear models.
+
+        Returns:
+            dict with keys:
+              'mode'    : 'concrete' | 'reinforcement' | 'balanced'
+              'eta_c'   : concrete strain utilisation (0 … 1+)
+              'eta_f'   : reinforcement strain utilisation (0 … 1+)
+              'eps_top' : top-fibre strain at M-peak [–]  (negative = compression)
+              'eps_bot' : bottom-fibre strain at M-peak [–]
+        """
+        if self.M_values is None or len(self.M_values) == 0:
+            return {'mode': 'unknown', 'eta_c': float('nan'), 'eta_f': float('nan'),
+                    'eps_top': float('nan'), 'eps_bot': float('nan')}
+
+        eps_cu = abs(self.cs.concrete.eps_cu2_computed)
+
+        # eps_ud: ultimate tensile strain — works for both steel (eps_ud) and
+        # CFRP (eps_cr alias eps_ud) via the common property interface.
+        main_layer = self.cs.reinforcement.layers[0]
+        eps_ud = getattr(main_layer.material, 'eps_ud', None)
+        if eps_ud is None:
+            eps_ud = getattr(main_layer.material, 'eps_cr', 0.025)
+
+        # Identify the failure onset index: last point before either material
+        # limit is first crossed.  Using the last sub-limit point avoids the
+        # artefact where the post-peak softening tail (CFRP) or the argmax
+        # heuristic pushes η above 1 due to solver step size.
+        kappas  = self.kappa_values
+        eps_bots = self.eps_bot_values
+        eps_tops = eps_bots - kappas * self.cs.h_total  # negative = compression
+
+        within = (eps_bots <= eps_ud) & (np.abs(eps_tops) <= eps_cu)
+        if within.any():
+            idx = int(np.where(within)[0][-1])
+        else:
+            # All points past both limits (very coarse κ grid): fall back to argmax
+            idx = int(np.argmax(self.M_values))
+
+        kappa   = kappas[idx]
+        eps_bot = eps_bots[idx]
+        eps_top = eps_tops[idx]
+
+        eta_c = abs(eps_top) / eps_cu  if eps_cu  > 0 else float('nan')
+        eta_f = eps_bot       / eps_ud if eps_ud  > 0 else float('nan')
+
+        tol = 0.05  # within 5 % → "balanced"
+        if abs(eta_c - eta_f) < tol:
+            mode = 'balanced'
+        elif eta_c > eta_f:
+            mode = 'concrete'
+        else:
+            mode = 'reinforcement'
+
+        return {
+            'mode'   : mode,
+            'eta_c'  : float(eta_c),
+            'eta_f'  : float(eta_f),
+            'eps_top': float(eps_top),
+            'eps_bot': float(eps_bot),
+        }
+
     def plot_mk(
         self,
         ax: Optional[plt.Axes] = None,
         show_grid: bool = True,
         color: str = "#1f77b4",
         linewidth: float = 2.0,
+        label: str = "M-κ",
+        show_failure_marker: bool = False,
     ) -> plt.Axes:
         """
         Plot moment-curvature relationship.
@@ -279,6 +363,12 @@ class MKappaAnalysis(BMCSModel):
             show_grid: Whether to show grid
             color: Line color
             linewidth: Line width
+            label: Legend label for this curve
+            show_failure_marker: If True, place a ◆/×/○ marker at the peak
+                point indicating the governing failure mode (concrete crushing,
+                reinforcement rupture, or balanced).  Use
+                ``add_failure_mode_legend(ax)`` afterwards to add the three
+                marker legend entries to the axes.
 
         Returns:
             Matplotlib axes with plot
@@ -292,7 +382,10 @@ class MKappaAnalysis(BMCSModel):
         # Convert curvature to ‰/mm for display
         kappa_permille_mm = self.kappa_values * 1000.0
 
-        ax.plot(kappa_permille_mm, self.M_values, color=color, linewidth=linewidth, label="M-κ")
+        ax.plot(kappa_permille_mm, self.M_values, color=color, linewidth=linewidth, label=label)
+
+        if show_failure_marker:
+            self._add_failure_marker(ax, color=color)
 
         ax.set_xlabel("Curvature [1/m]", fontsize=12)
         ax.set_ylabel("Moment M [kN·m]", fontsize=12)
@@ -304,6 +397,62 @@ class MKappaAnalysis(BMCSModel):
         ax.legend(fontsize=11)
 
         return ax
+
+    def _add_failure_marker(
+        self,
+        ax: plt.Axes,
+        color: str = "#1f77b4",
+    ) -> None:
+        """Place a ◆/×/○ failure-mode marker at the peak point on *ax*.
+
+        The marker style is determined by ``get_failure_mode()``.  This method
+        is called automatically when ``plot_mk(show_failure_marker=True)`` is
+        used, or can be invoked directly for fine-grained control.
+        """
+        fm = self.get_failure_mode()
+        idx_pk = int(np.argmax(self.M_values))
+        mstyle, msize, _ = _FAILURE_MODE_MARKERS[fm['mode']]
+        ax.plot(
+            self.kappa_values[idx_pk] * 1000.0,
+            self.M_values[idx_pk],
+            marker=mstyle,
+            markersize=msize,
+            color=color,
+            markeredgewidth=2.0,
+            markerfacecolor='white',
+            linestyle='none',
+            zorder=5,
+        )
+
+    @staticmethod
+    def add_failure_mode_legend(
+        ax: plt.Axes,
+        fontsize: int = 9,
+        **legend_kwargs,
+    ) -> None:
+        """Append the three failure-mode marker entries to the axes legend.
+
+        Call this once after all ``plot_mk(show_failure_marker=True)`` calls
+        to add ◆/×/○ legend entries without duplicating them per curve.
+
+        Example::
+
+            for b_f, color in zip(b_f_values, colors):
+                mk.plot_mk(ax=ax, color=color, show_failure_marker=True, label=...)
+            MKappaAnalysis.add_failure_mode_legend(ax)
+        """
+        handles, labels = ax.get_legend_handles_labels()
+        for mode, (mstyle, msize, mlabel) in _FAILURE_MODE_MARKERS.items():
+            handles.append(
+                mlines.Line2D(
+                    [], [],
+                    marker=mstyle, linestyle='none', color='#555555',
+                    markersize=msize, markeredgewidth=2.0, markerfacecolor='white',
+                    label=mlabel,
+                )
+            )
+            labels.append(mlabel)
+        ax.legend(handles=handles, labels=labels, fontsize=fontsize, **legend_kwargs)
 
     def plot_state_at_kappa(
         self,
@@ -351,6 +500,60 @@ class MKappaAnalysis(BMCSModel):
         profile.plot_stress_strain_profile(ax_strain, ax_stress, show_resultants)
 
         return ax_strain, ax_stress
+
+    def plot_summary(
+        self,
+        title: str = "",
+        figsize: Tuple[float, float] = (16, 8),
+    ) -> plt.Figure:
+        """
+        4-panel summary figure: cross-section | M-κ curve | strain profile | stress profile.
+
+        All panels are drawn by delegating to the existing model-level plot methods
+        (``cs.plot_cross_section``, ``plot_mk``, ``plot_state_at_kappa``).
+
+        Args:
+            title: Figure suptitle (defaults to class name + key parameters).
+            figsize: Figure size in inches.
+
+        Returns:
+            The matplotlib Figure.
+        """
+        import matplotlib.gridspec as gridspec
+
+        if self.M_values is None or len(self.M_values) == 0:
+            raise ValueError("No solution available. Call solve() first.")
+
+        idx_peak = int(np.argmax(self.M_values))
+        kappa_peak = self.kappa_values[idx_peak]
+
+        fig = plt.figure(figsize=figsize, layout="constrained")
+        fig.suptitle(
+            title or f"M-κ Summary  (M_peak = {self.M_values[idx_peak]:.1f} kN·m)",
+            fontsize=13,
+            fontweight="bold",
+        )
+        gs = gridspec.GridSpec(1, 4, figure=fig)
+
+        self.cs.plot_cross_section(ax=fig.add_subplot(gs[0]))
+        self.plot_mk(ax=fig.add_subplot(gs[1]))
+        self.plot_state_at_kappa(
+            kappa_peak,
+            ax_strain=fig.add_subplot(gs[2]),
+            ax_stress=fig.add_subplot(gs[3]),
+        )
+
+        # Render exactly once in any environment:
+        # - IPython/Jupyter: display() shows it, plt.close() stops flush_figures()
+        #   from rendering it a second time, and returning None suppresses _repr_png_()
+        # - Script / non-IPython: fall back to returning the figure for the caller
+        try:
+            from IPython.display import display as ipy_display
+            ipy_display(fig)
+            plt.close(fig)
+            return None
+        except ImportError:
+            return fig
 
 
 def create_default_mkappa(N_Ed: float = 0.0) -> MKappaAnalysis:

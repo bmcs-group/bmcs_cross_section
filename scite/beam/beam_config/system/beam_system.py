@@ -1,13 +1,15 @@
 import numpy as np
 import traits.api as tr
 from anastruct import SystemElements
+from bmcs_utils.api import Float, FloatEditor, Int, IntEditor, Item, View
+
 from scite.beam.beam_config.system.system import System
-from bmcs_utils.api import Int, Item, View, Float, FloatEditor, IntEditor
 
 
 class BeamSystem(System):
 
     name = 'BeamSystem'
+    force_label = r'$F$'
 
     def __init__(self, *args, **kw):
         super().__init__(*args, **kw)

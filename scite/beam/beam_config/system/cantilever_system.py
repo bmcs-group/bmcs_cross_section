@@ -1,10 +1,13 @@
-from bmcs_utils.api import Model, Int, Item, View, Float
-from scite.beam.beam_config.system.beam_system import BeamSystem
 import numpy as np
+from bmcs_utils.api import Float, Int, Item, Model, View
+
+from scite.beam.beam_config.system.beam_system import BeamSystem
+
 
 class CantileverDistLoadSystem(BeamSystem):
 
     name = 'CantileverDistLoadSystem'
+    force_label = r'$p$'
 
     F = Float(-5, SYSTEM=True)
     n_x = 2
@@ -31,7 +34,7 @@ class CantileverDistLoadSystem(BeamSystem):
 
     def get_plot_force_scale_and_unit(self):
         """ Scale which should be applied on the force when plotting """
+        # kN/m load (N/mm × 1 = kN/m)
+        return 1, 'kN/m'
         # Total load
-        return 1 * self.L/1000, 'kN'
-        # kN/m load
-        # return 1, 'kN/m'
+        # return 1 * self.L/1000, 'kN'

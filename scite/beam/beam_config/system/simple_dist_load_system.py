@@ -7,6 +7,7 @@ from scite.beam.beam_config.system.beam_system import BeamSystem
 class SimpleDistLoadSystem(BeamSystem):
 
     name = 'SimpleDistLoadSystem'
+    force_label = r'$p$'
 
     F = Float(-5, SYSTEM=True)
     n_x = 2
@@ -34,7 +35,7 @@ class SimpleDistLoadSystem(BeamSystem):
 
     def get_plot_force_scale_and_unit(self):
         """ Scale which should be applied on the force when plotting """
+        # kN/m load (N/mm × 1 = kN/m)
+        return 1, 'kN/m'
         # Total load
-        return 1 * self.L/1000, 'kN'
-        # kN/m load
-        # return 1, 'kN/m'
+        # return 1 * self.L/1000, 'kN'

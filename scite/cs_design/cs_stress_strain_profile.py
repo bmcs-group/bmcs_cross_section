@@ -289,13 +289,8 @@ class StressStrainProfile:
             return self.cs.h_total / 2
     
     def _get_width_at_z(self, z: float) -> float:
-        """Get cross-section width at height z."""
-        # For rectangular sections, width is constant
-        if hasattr(self.cs.shape, 'b'):
-            return self.cs.shape.b
-        # For T or I sections, need to check flanges
-        # Simplified - assume rectangular for now
-        return self.cs.shape.b if hasattr(self.cs.shape, 'b') else 300.0
+        """Get cross-section width at height z, delegating to the shape's polymorphic method."""
+        return float(self.cs.shape.get_width_at_y(np.array([z]))[0])
     
     def _plot_curvature_indicator(self, ax_strain, strains_permille):
         """Plot curvature visualization triangle in strain plot.
