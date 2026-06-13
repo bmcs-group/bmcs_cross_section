@@ -608,7 +608,7 @@ class ContinuousBeamAnalysis:
             idx = int(np.clip(kappa_idx, 0, n - 1))
             ax.axvline(kappa_abs[idx], color='gray', lw=1.2, ls='-', alpha=0.7, zorder=3)
             ax.scatter([kappa_abs[idx]], [q_d[idx]],
-                       color='red', s=50, zorder=5)
+                       color='steelblue', s=50, zorder=5)
 
         ax.set_ylabel('$q$  [N/mm]', fontsize=11)
         ax.legend(fontsize=11, loc='lower right')
@@ -643,8 +643,9 @@ class ContinuousBeamAnalysis:
         La         = self.span_left.L
         Lb         = self.span_right.L
         bda        = self.span_left
-        C_HOG      = 'black'
-        C_SAG      = '#005599'
+        C_HOG      = 'steelblue'   # redistributed hogging — blue
+        C_SAG      = '#4488cc'     # NL sagging — lighter blue
+        C_EL       = '#cc2222'     # elastic reference — red
 
         M_hog_el_at_qu = abs(s['M_hog_el_d'][-1])
         M_R_hog        = M_hog_abs[-1]
@@ -655,19 +656,19 @@ class ContinuousBeamAnalysis:
         # ── Curve lines — these go into the left legend ───────────────────────
         h_hog, = ax.plot(kappa_abs, M_hog_abs, '-', color=C_HOG, lw=2.0)
         if sym:
-            h_sag_a, = ax.plot(kappa_abs, M_sag_a, '-', color=C_SAG, lw=2.0)
+            h_sag_a, = ax.plot(kappa_abs, M_sag_a, '--', color=C_SAG, lw=2.0)
             curve_handles = [h_hog, h_sag_a]
             curve_labels  = ['$|M_{hog}|$', '$M_{sag,max}$']
         else:
-            h_sag_a, = ax.plot(kappa_abs, M_sag_a, '-',  color=C_SAG, lw=2.0)
-            h_sag_b, = ax.plot(kappa_abs, M_sag_b, '--', color=C_SAG, lw=1.8)
+            h_sag_a, = ax.plot(kappa_abs, M_sag_a, '--', color=C_SAG, lw=2.0)
+            h_sag_b, = ax.plot(kappa_abs, M_sag_b, ':',  color=C_SAG, lw=2.0)
             curve_handles = [h_hog, h_sag_a, h_sag_b]
             curve_labels  = ['$|M_{hog}|$', '$M_{sag,a}$ (left)', '$M_{sag,b}$ (right)']
 
         # ── Reference axhlines — no legend labels ─────────────────────────────
-        ax.axhline(bda.M_R,        color=C_SAG,    ls=':', lw=1.2)
-        ax.axhline(M_R_hog,        color=C_HOG,    ls=':', lw=1.2)
-        ax.axhline(M_hog_el_at_qu, color='#666666', ls='--', lw=1.2)
+        ax.axhline(bda.M_R,        color=C_HOG, ls=':', lw=1.2)   # M_R,sag — blue
+        ax.axhline(M_R_hog,        color=C_HOG, ls=':', lw=1.2)   # M_R,hog — blue
+        ax.axhline(M_hog_el_at_qu, color=C_EL,  ls='--', lw=1.2)  # elastic ref — red
 
         self._sweep_vlines(ax)
         ax.set_ylim(bottom=0, top=M_hog_el_at_qu * 1.12)
@@ -676,11 +677,11 @@ class ContinuousBeamAnalysis:
         if kappa_idx is not None:
             idx = int(np.clip(kappa_idx, 0, n - 1))
             ax.axvline(kappa_abs[idx], color='gray', lw=1.2, ls='-', alpha=0.7, zorder=3)
-            ax.scatter([kappa_abs[idx]], [M_hog_abs[idx]], color='red', s=50, zorder=5)
-            ax.scatter([kappa_abs[idx]], [M_sag_a[idx]],  color='red', s=50, zorder=5)
+            ax.scatter([kappa_abs[idx]], [M_hog_abs[idx]], color='steelblue', s=50, zorder=5)
+            ax.scatter([kappa_abs[idx]], [M_sag_a[idx]],  color='steelblue', s=50, zorder=5)
             if not sym:
                 ax.scatter([kappa_abs[idx]], [M_sag_b[idx]],
-                           color='red', s=50, marker='s', zorder=5)
+                           color='steelblue', s=50, marker='s', zorder=5)
 
         # ── Left legend: curve line styles ────────────────────────────────────
         leg_left = ax.legend(
@@ -789,45 +790,63 @@ class ContinuousBeamAnalysis:
 
         ax.invert_yaxis()   # sagging below axis (structural convention)
 
-        # ── Hogging box — centred at interior support, near lower boundary ────
-        # With invert_yaxis, axes y=0 is the visual bottom (sagging zone).
-        # x=La is the interior support; the sagging zone there is free space.
+        C_NL = 'steelblue'
+        C_EL = '#cc2222'
+
+        # ── Hogging box — split into NL (blue) and EL (red), stacked at interior support
+        # Placed in the sagging zone (axes y≈0) which is free space at x=La.
         import matplotlib.transforms as _mtfm
         _blended = _mtfm.blended_transform_factory(ax.transData, ax.transAxes)
         ax.text(
-            La, 0.05,
-            f'$M_{{hog,nl}}$ = {M_hog_Nmm / 1e6:.1f} kN·m\n'
-            f'$M_{{hog,el}}$  = {M_hog_el_Nmm / 1e6:.1f} kN·m',
-            transform=_blended,
-            ha='center', va='bottom', fontsize=8.5,
+            La, 0.03,
+            f'$M_{{hog,nl}}$ = {M_hog_Nmm / 1e6:.1f} kN·m',
+            transform=_blended, ha='center', va='bottom', fontsize=8.5, color=C_NL,
             bbox=dict(boxstyle='round,pad=0.3', facecolor='white',
-                      edgecolor='#555555', alpha=0.90),
+                      edgecolor=C_NL, alpha=0.90),
+        )
+        ax.text(
+            La, 0.17,
+            f'$M_{{hog,el}}$  = {M_hog_el_Nmm / 1e6:.1f} kN·m',
+            transform=_blended, ha='center', va='bottom', fontsize=8.5, color=C_EL,
+            bbox=dict(boxstyle='round,pad=0.3', facecolor='white',
+                      edgecolor=C_EL, alpha=0.90),
         )
 
-        # ── Corner sagging boxes — upper boundary (hogging zone corners are free)
-        # With invert_yaxis, axes y=1 is the visual top (hogging zone).
-        # At x=0 and x=La+Lb the curves have M=0 (simply supported ends),
-        # leaving the corners above the zero line empty.
+        # ── Corner sagging boxes — NL (blue) and EL (red) stacked in the upper corners
+        # (hogging zone corners at x=0 and x=La+Lb are free: moment is 0 at outer supports)
         sym = abs(La - Lb) < 1.0
+        # Left span — NL
         ax.text(
             0.01, 0.97,
-            f'Left span\n'
-            f'$M_{{sag,nl}}$ = {M_a[idx_sag_a]       / 1e6:.1f} kN·m\n'
-            f'$M_{{sag,el}}$  = {M_a_el[idx_sag_a_el] / 1e6:.1f} kN·m',
-            transform=ax.transAxes,
-            ha='left', va='top', fontsize=8.5,
+            f'Left span\n$M_{{sag,nl}}$ = {M_a[idx_sag_a] / 1e6:.1f} kN·m',
+            transform=ax.transAxes, ha='left', va='top', fontsize=8.5, color=C_NL,
             bbox=dict(boxstyle='round,pad=0.3', facecolor='white',
-                      edgecolor='steelblue', alpha=0.88),
+                      edgecolor=C_NL, alpha=0.88),
         )
+        # Left span — EL
+        ax.text(
+            0.01, 0.80,
+            f'$M_{{sag,el}}$  = {M_a_el[idx_sag_a_el] / 1e6:.1f} kN·m',
+            transform=ax.transAxes, ha='left', va='top', fontsize=8.5, color=C_EL,
+            bbox=dict(boxstyle='round,pad=0.3', facecolor='white',
+                      edgecolor=C_EL, alpha=0.88),
+        )
+        # Right span — NL
         ax.text(
             0.99, 0.97,
             ('Right span' if not sym else 'Right = Left') + '\n'
-            f'$M_{{sag,nl}}$ = {M_b[idx_sag_b]        / 1e6:.1f} kN·m\n'
-            f'$M_{{sag,el}}$  = {M_b_el[idx_sag_b_el]  / 1e6:.1f} kN·m',
-            transform=ax.transAxes,
-            ha='right', va='top', fontsize=8.5,
+            f'$M_{{sag,nl}}$ = {M_b[idx_sag_b] / 1e6:.1f} kN·m',
+            transform=ax.transAxes, ha='right', va='top', fontsize=8.5, color=C_NL,
             bbox=dict(boxstyle='round,pad=0.3', facecolor='white',
-                      edgecolor='#cc2222', alpha=0.88),
+                      edgecolor=C_NL, alpha=0.88),
+        )
+        # Right span — EL
+        ax.text(
+            0.99, 0.80,
+            f'$M_{{sag,el}}$  = {M_b_el[idx_sag_b_el] / 1e6:.1f} kN·m',
+            transform=ax.transAxes, ha='right', va='top', fontsize=8.5, color=C_EL,
+            bbox=dict(boxstyle='round,pad=0.3', facecolor='white',
+                      edgecolor=C_EL, alpha=0.88),
         )
 
         ax.set_xlabel('$x$  [mm]', fontsize=11)
