@@ -520,6 +520,35 @@ class ContinuousBeamAnalysis:
         """
         return self.compute_sweep()
 
+    def _design_chars(self) -> dict:
+        """Dimensionless design characteristics of the hogging section.
+
+        Returns ρ_l (geometric reinforcement ratio), ω (mechanical ratio),
+        and L/d (effective slenderness), all derived from the hogging section
+        geometry and the elastic equivalent span L_eff = √[(La³+Lb³)/(La+Lb)].
+
+        Compression reinforcement (bottom bars) is intentionally ignored:
+        this gives a conservative upper-bound on x/d and a lower-bound on
+        ductility — appropriate for an exploratory design-space sweep.
+        """
+        cs    = self.span_left.mk.cs
+        b     = float(cs.shape.b)
+        f_ck  = float(cs.concrete.f_ck)
+        f_cd  = f_ck / float(getattr(cs.concrete, 'gamma_c', 1.5))
+        layers = cs.reinforcement.layers
+        top   = max(layers, key=lambda lay: lay.z)   # tension steel in hogging
+        A_s   = float(top.A_s)
+        d_hog = float(top.z)                         # distance from bottom (compression face)
+        f_yd  = float(top.f_yd)
+        La    = self.span_left.L
+        Lb    = self.span_right.L
+        L_eff = float(np.sqrt((La ** 3 + Lb ** 3) / (La + Lb)))
+        rho_l = A_s / (b * d_hog)
+        omega = rho_l * f_yd / f_cd
+        L_d   = L_eff / d_hog
+        return dict(rho_l=rho_l, omega=omega, L_d=L_d, L_eff=L_eff,
+                    d_hog=d_hog, b=b, f_ck=f_ck, f_cd=f_cd, f_yd=f_yd)
+
     def _sweep_vlines(self, ax: plt.Axes) -> None:
         """Draw yield and failure vertical lines on a κ sweep axis."""
         s  = self.sweep
@@ -609,6 +638,18 @@ class ContinuousBeamAnalysis:
             ax.axvline(kappa_abs[idx], color='gray', lw=1.2, ls='-', alpha=0.7, zorder=3)
             ax.scatter([kappa_abs[idx]], [q_d[idx]],
                        color='steelblue', s=50, zorder=5)
+
+        # ── Design characteristics annotation ─────────────────────────────────
+        dc = self._design_chars()
+        ax.text(
+            0.02, 0.98,
+            f'$\\rho_l$ = {dc["rho_l"]:.4f}'
+            f'    $\\omega$ = {dc["omega"]:.3f}'
+            f'    $L/d$ = {dc["L_d"]:.1f}',
+            transform=ax.transAxes, ha='left', va='top', fontsize=9,
+            bbox=dict(boxstyle='round,pad=0.35', facecolor='#f8f8f8',
+                      edgecolor='#aaaaaa', alpha=0.92),
+        )
 
         ax.set_ylabel('$q$  [N/mm]', fontsize=11)
         ax.legend(fontsize=11, loc='lower right')
