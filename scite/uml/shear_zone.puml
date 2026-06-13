@@ -1,0 +1,66 @@
+@startuml
+
+package shear_zone{
+class SZCrackPath{
+  x_Ia
+  x_Ja
+  x_Ma
+}
+
+class SZCrackTipRotation{
+  x_tip_ak
+  psi
+}
+
+SZCrackPath --> SZCrackTipRotation : sz_ctr
+
+class SZDeformedState{
+  x1_Ia
+  x1_Ja
+  x1_Ma
+  u_La
+  u_Lb
+}
+
+SZDeformedState --> SZCrackPath : sz_cp
+
+class SZStressProfile{
+  S_Lb
+  S_La
+}
+
+SZStressProfile --> SZDeformedState : sz_sp
+
+class SZCrackTipStress{
+  sig_0_k
+  sig_1_k
+}
+
+class SZCrackTipStressLocal{
+}
+
+class SZCrackTipStressGlobal{
+}
+
+SZCrackTipStressLocal --|> SZCrackTipStress
+SZCrackTipStressGlobal --|> SZCrackTipStress
+SZCrackTipStressFE --|> SZCrackTipStress
+
+SZCrackTipStress --> SZStressProfile : sz_sp
+
+class SZCrackExtension{
+}
+
+SZCrackExtension --> SZCrackTipStress : sz_cts
+
+class SZCrackPropagationModel{
+}
+
+SZCrackPropagationModel --|> SZCrackExtension
+
+SZCrackPropagationModel --|> BMCSModel : sz_bd
+SZCrackPath ..> BeamDesign : sz_bd
+
+}
+
+@enduml

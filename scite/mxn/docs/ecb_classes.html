@@ -1,0 +1,265 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>Classes describing the cross sectional layout &mdash; mn-trc-shell 0.9.1 documentation</title>
+    
+    <link rel="stylesheet" href="_static/default.css" type="text/css" />
+    <link rel="stylesheet" href="_static/pygments.css" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    './',
+        VERSION:     '0.9.1',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="_static/jquery.js"></script>
+    <script type="text/javascript" src="_static/underscore.js"></script>
+    <script type="text/javascript" src="_static/doctools.js"></script>
+    <link rel="top" title="mn-trc-shell 0.9.1 documentation" href="index.html" />
+    <link rel="prev" title="Introduction" href="intro.html" /> 
+  </head>
+  <body>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="intro.html" title="Introduction"
+             accesskey="P">previous</a> |</li>
+        <li><a href="index.html">mn-trc-shell 0.9.1 documentation</a> &raquo;</li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body">
+            
+  <div class="section" id="classes-describing-the-cross-sectional-layout">
+<h1>Classes describing the cross sectional layout<a class="headerlink" href="#classes-describing-the-cross-sectional-layout" title="Permalink to this headline">¶</a></h1>
+<div class="section" id="ecbcrosssectiongeo">
+<h2>ECBCrossSectionGeo<a class="headerlink" href="#ecbcrosssectiongeo" title="Permalink to this headline">¶</a></h2>
+<p class="graphviz">
+digraph inheritancefad51ed75a {
+rankdir=LR;
+size=&quot;8.0, 12.0&quot;;
+  &quot;CHasTraits&quot; [shape=box,style=&quot;setlinewidth(0.5)&quot;,fontsize=10,fontname=&quot;Vera Sans, DejaVu Sans, Liberation Sans, Arial, Helvetica, sans&quot;,height=0.25];
+  &quot;CrossSectionComponent&quot; [style=&quot;setlinewidth(0.5)&quot;,fontname=&quot;Vera Sans, DejaVu Sans, Liberation Sans, Arial, Helvetica, sans&quot;,tooltip=&quot;Cross section component supplying the normal force and moment..&quot;,height=0.25,shape=box,fontsize=10];
+  &quot;MxNTreeNode&quot; -&gt; &quot;CrossSectionComponent&quot; [arrowsize=0.5,style=&quot;setlinewidth(0.5)&quot;];
+  &quot;HasStrictTraits&quot; [style=&quot;setlinewidth(0.5)&quot;,fontname=&quot;Vera Sans, DejaVu Sans, Liberation Sans, Arial, Helvetica, sans&quot;,tooltip=&quot;This class guarantees that any object attribute that does not have an&quot;,height=0.25,shape=box,fontsize=10];
+  &quot;HasTraits&quot; -&gt; &quot;HasStrictTraits&quot; [arrowsize=0.5,style=&quot;setlinewidth(0.5)&quot;];
+  &quot;HasTraits&quot; [style=&quot;setlinewidth(0.5)&quot;,fontname=&quot;Vera Sans, DejaVu Sans, Liberation Sans, Arial, Helvetica, sans&quot;,tooltip=&quot;Enables any Python class derived from it to have trait atttributes.&quot;,height=0.25,shape=box,fontsize=10];
+  &quot;CHasTraits&quot; -&gt; &quot;HasTraits&quot; [arrowsize=0.5,style=&quot;setlinewidth(0.5)&quot;];
+  &quot;MxNTreeNode&quot; [style=&quot;setlinewidth(0.5)&quot;,fontname=&quot;Vera Sans, DejaVu Sans, Liberation Sans, Arial, Helvetica, sans&quot;,tooltip=&quot;Base class of all model classes that can appear in a tree node.&quot;,height=0.25,shape=box,fontsize=10];
+  &quot;HasStrictTraits&quot; -&gt; &quot;MxNTreeNode&quot; [arrowsize=0.5,style=&quot;setlinewidth(0.5)&quot;];
+}
+</p>
+<dl class="class">
+<dt id="mxn.CrossSectionComponent">
+<em class="property">class </em><tt class="descclassname">mxn.</tt><tt class="descname">CrossSectionComponent</tt><big>(</big><em>*args</em>, <em>**metadata</em><big>)</big><a class="headerlink" href="#mxn.CrossSectionComponent" title="Permalink to this definition">¶</a></dt>
+<dd><p>Cross section component supplying the normal force and moment..</p>
+<dl class="attribute">
+<dt id="mxn.CrossSectionComponent.M">
+<tt class="descname">M</tt><em class="property"> = None</em><a class="headerlink" href="#mxn.CrossSectionComponent.M" title="Permalink to this definition">¶</a></dt>
+<dd><p>Resulting moment.</p>
+</dd></dl>
+
+<dl class="attribute">
+<dt id="mxn.CrossSectionComponent.N">
+<tt class="descname">N</tt><em class="property"> = None</em><a class="headerlink" href="#mxn.CrossSectionComponent.N" title="Permalink to this definition">¶</a></dt>
+<dd><p>Resulting normal force.</p>
+</dd></dl>
+
+<dl class="attribute">
+<dt id="mxn.CrossSectionComponent.eps_changed">
+<tt class="descname">eps_changed</tt><em class="property"> = None</em><a class="headerlink" href="#mxn.CrossSectionComponent.eps_changed" title="Permalink to this definition">¶</a></dt>
+<dd><p>State notifier that is set to true if the cross section state has changed
+upon modifications of eps_lo and eps_up</p>
+</dd></dl>
+
+<dl class="attribute">
+<dt id="mxn.CrossSectionComponent.law_changed">
+<tt class="descname">law_changed</tt><em class="property"> = None</em><a class="headerlink" href="#mxn.CrossSectionComponent.law_changed" title="Permalink to this definition">¶</a></dt>
+<dd><p>Notifier set to True when internal values of constitutive law change</p>
+</dd></dl>
+
+<dl class="attribute">
+<dt id="mxn.CrossSectionComponent.material_changed">
+<tt class="descname">material_changed</tt><em class="property"> = None</em><a class="headerlink" href="#mxn.CrossSectionComponent.material_changed" title="Permalink to this definition">¶</a></dt>
+<dd><p>Notifier set to True when internal values of material change</p>
+</dd></dl>
+
+<dl class="method">
+<dt id="mxn.CrossSectionComponent.notify_change">
+<tt class="descname">notify_change</tt><big>(</big><big>)</big><a class="headerlink" href="#mxn.CrossSectionComponent.notify_change" title="Permalink to this definition">¶</a></dt>
+<dd><p>Propagate the change of the component geometry or stress-strain
+law to the cross section state.</p>
+</dd></dl>
+
+<dl class="attribute">
+<dt id="mxn.CrossSectionComponent.state">
+<tt class="descname">state</tt><em class="property"> = None</em><a class="headerlink" href="#mxn.CrossSectionComponent.state" title="Permalink to this definition">¶</a></dt>
+<dd><p>Strain state of a cross section</p>
+</dd></dl>
+
+</dd></dl>
+
+</div>
+<div class="section" id="ecbcrosssection">
+<h2>ECBCrossSection<a class="headerlink" href="#ecbcrosssection" title="Permalink to this headline">¶</a></h2>
+<p class="graphviz">
+digraph inheritance29ef64a3b6 {
+rankdir=LR;
+size=&quot;8.0, 12.0&quot;;
+  &quot;CHasTraits&quot; [shape=box,style=&quot;setlinewidth(0.5)&quot;,fontsize=10,fontname=&quot;Vera Sans, DejaVu Sans, Liberation Sans, Arial, Helvetica, sans&quot;,height=0.25];
+  &quot;CrossSection&quot; [style=&quot;setlinewidth(0.5)&quot;,fontname=&quot;Vera Sans, DejaVu Sans, Liberation Sans, Arial, Helvetica, sans&quot;,tooltip=&quot;Cross section characteristics needed for tensile specimens&quot;,height=0.25,shape=box,fontsize=10];
+  &quot;CrossSectionState&quot; -&gt; &quot;CrossSection&quot; [arrowsize=0.5,style=&quot;setlinewidth(0.5)&quot;];
+  &quot;CrossSectionState&quot; [style=&quot;setlinewidth(0.5)&quot;,fontname=&quot;Vera Sans, DejaVu Sans, Liberation Sans, Arial, Helvetica, sans&quot;,tooltip=&quot;Cross section state is defined by the linear profile of strains&quot;,height=0.25,shape=box,fontsize=10];
+  &quot;MxNTreeNode&quot; -&gt; &quot;CrossSectionState&quot; [arrowsize=0.5,style=&quot;setlinewidth(0.5)&quot;];
+  &quot;HasStrictTraits&quot; [style=&quot;setlinewidth(0.5)&quot;,fontname=&quot;Vera Sans, DejaVu Sans, Liberation Sans, Arial, Helvetica, sans&quot;,tooltip=&quot;This class guarantees that any object attribute that does not have an&quot;,height=0.25,shape=box,fontsize=10];
+  &quot;HasTraits&quot; -&gt; &quot;HasStrictTraits&quot; [arrowsize=0.5,style=&quot;setlinewidth(0.5)&quot;];
+  &quot;HasTraits&quot; [style=&quot;setlinewidth(0.5)&quot;,fontname=&quot;Vera Sans, DejaVu Sans, Liberation Sans, Arial, Helvetica, sans&quot;,tooltip=&quot;Enables any Python class derived from it to have trait atttributes.&quot;,height=0.25,shape=box,fontsize=10];
+  &quot;CHasTraits&quot; -&gt; &quot;HasTraits&quot; [arrowsize=0.5,style=&quot;setlinewidth(0.5)&quot;];
+  &quot;MxNTreeNode&quot; [style=&quot;setlinewidth(0.5)&quot;,fontname=&quot;Vera Sans, DejaVu Sans, Liberation Sans, Arial, Helvetica, sans&quot;,tooltip=&quot;Base class of all model classes that can appear in a tree node.&quot;,height=0.25,shape=box,fontsize=10];
+  &quot;HasStrictTraits&quot; -&gt; &quot;MxNTreeNode&quot; [arrowsize=0.5,style=&quot;setlinewidth(0.5)&quot;];
+}
+</p>
+<dl class="class">
+<dt id="mxn.CrossSection">
+<em class="property">class </em><tt class="descclassname">mxn.</tt><tt class="descname">CrossSection</tt><a class="headerlink" href="#mxn.CrossSection" title="Permalink to this definition">¶</a></dt>
+<dd><p>Cross section characteristics needed for tensile specimens</p>
+<dl class="attribute">
+<dt id="mxn.CrossSection.M">
+<tt class="descname">M</tt><em class="property"> = None</em><a class="headerlink" href="#mxn.CrossSection.M" title="Permalink to this definition">¶</a></dt>
+<dd><p>Get the resulting moment.</p>
+</dd></dl>
+
+<dl class="attribute">
+<dt id="mxn.CrossSection.N">
+<tt class="descname">N</tt><em class="property"> = None</em><a class="headerlink" href="#mxn.CrossSection.N" title="Permalink to this definition">¶</a></dt>
+<dd><p>Get the resulting normal force.</p>
+</dd></dl>
+
+<dl class="attribute">
+<dt id="mxn.CrossSection.changed">
+<tt class="descname">changed</tt><em class="property"> = None</em><a class="headerlink" href="#mxn.CrossSection.changed" title="Permalink to this definition">¶</a></dt>
+<dd><p>Notifier of a change in some component of a cross section</p>
+</dd></dl>
+
+<dl class="attribute">
+<dt id="mxn.CrossSection.notify_change_ext">
+<tt class="descname">notify_change_ext</tt><em class="property"> = None</em><a class="headerlink" href="#mxn.CrossSection.notify_change_ext" title="Permalink to this definition">¶</a></dt>
+<dd><p>Notifier of component changes for external clients</p>
+</dd></dl>
+
+<dl class="method">
+<dt id="mxn.CrossSection.plot">
+<tt class="descname">plot</tt><big>(</big><em>fig</em><big>)</big><a class="headerlink" href="#mxn.CrossSection.plot" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="method">
+<dt id="mxn.CrossSection.plot_eps">
+<tt class="descname">plot_eps</tt><big>(</big><em>ax</em><big>)</big><a class="headerlink" href="#mxn.CrossSection.plot_eps" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="method">
+<dt id="mxn.CrossSection.plot_geometry">
+<tt class="descname">plot_geometry</tt><big>(</big><em>ax</em><big>)</big><a class="headerlink" href="#mxn.CrossSection.plot_geometry" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="method">
+<dt id="mxn.CrossSection.plot_sig">
+<tt class="descname">plot_sig</tt><big>(</big><em>ax</em><big>)</big><a class="headerlink" href="#mxn.CrossSection.plot_sig" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="attribute">
+<dt id="mxn.CrossSection.reinf">
+<tt class="descname">reinf</tt><em class="property"> = None</em><a class="headerlink" href="#mxn.CrossSection.reinf" title="Permalink to this definition">¶</a></dt>
+<dd><p>Components of the cross section including the matrix and reinforcement.</p>
+</dd></dl>
+
+<dl class="attribute">
+<dt id="mxn.CrossSection.reinf_components_with_state">
+<tt class="descname">reinf_components_with_state</tt><em class="property"> = None</em><a class="headerlink" href="#mxn.CrossSection.reinf_components_with_state" title="Permalink to this definition">¶</a></dt>
+<dd><p>Components linked to the strain state of the cross section</p>
+</dd></dl>
+
+<dl class="attribute">
+<dt id="mxn.CrossSection.unit_conversion_factor">
+<tt class="descname">unit_conversion_factor</tt><em class="property"> = None</em><a class="headerlink" href="#mxn.CrossSection.unit_conversion_factor" title="Permalink to this definition">¶</a></dt>
+<dd><p>Convert the MN to kN</p>
+</dd></dl>
+
+</dd></dl>
+
+</div>
+</div>
+
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar">
+        <div class="sphinxsidebarwrapper">
+  <h3><a href="index.html">Table Of Contents</a></h3>
+  <ul>
+<li><a class="reference internal" href="#">Classes describing the cross sectional layout</a><ul>
+<li><a class="reference internal" href="#ecbcrosssectiongeo">ECBCrossSectionGeo</a></li>
+<li><a class="reference internal" href="#ecbcrosssection">ECBCrossSection</a></li>
+</ul>
+</li>
+</ul>
+
+  <h4>Previous topic</h4>
+  <p class="topless"><a href="intro.html"
+                        title="previous chapter">Introduction</a></p>
+  <h3>This Page</h3>
+  <ul class="this-page-menu">
+    <li><a href="_sources/ecb_classes.txt"
+           rel="nofollow">Show Source</a></li>
+  </ul>
+<div id="searchbox" style="display: none">
+  <h3>Quick search</h3>
+    <form class="search" action="search.html" method="get">
+      <input type="text" name="q" />
+      <input type="submit" value="Go" />
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+    <p class="searchtip" style="font-size: 90%">
+    Enter search terms or a module, class or function name.
+    </p>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="intro.html" title="Introduction"
+             >previous</a> |</li>
+        <li><a href="index.html">mn-trc-shell 0.9.1 documentation</a> &raquo;</li> 
+      </ul>
+    </div>
+    <div class="footer">
+        &copy; Copyright 2014, IMB.
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.2.2.
+    </div>
+  </body>
+</html>

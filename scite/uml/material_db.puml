@@ -1,0 +1,24 @@
+@startuml
+
+package MaterialDB{
+abstract class MaterialComponent
+
+class ReinfMaterial
+
+class ConcreteMixture
+ConcreteMixture --|> MaterialComponent
+ConcreteMatMod --o "1*" ConcreteMixture : < mat_mod
+
+class ReinfMaterial
+ReinfMaterial --|> MaterialComponent
+ReinfMatMod --o "1*" ReinfMaterial : < mat_mod
+
+class BondMaterial
+BondMaterial --|> MaterialComponent
+BondMaterial o--> ReinfMaterial
+BondMaterial o--> ConcreteMixture
+
+BondMatMod --o "1*" BondMaterial : < mat_mod
+}
+
+@enduml

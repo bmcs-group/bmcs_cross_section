@@ -1,0 +1,61 @@
+@startuml
+
+package beam_design{
+
+class BeamDesign{
+  length;
+}
+
+class BeamAction{
+}
+
+BeamDesign --|> CSDesign
+
+class History{
+}
+
+class BMCSModel{
+}
+
+BMCSModel --> BeamDesign
+BMCSModel --> BeamAction
+BMCSModel --> History
+
+BeamAction "1*" --> Load : loads >
+BeamAction "1*" --> Support : supports >
+
+abstract class BC{
+}
+class Support{
+}
+class Load{
+}
+Support --|> BC
+Load --|> BC
+
+class BMCSNModel{
+}
+
+class BMCSAModel{
+}
+
+BMCSNModel --|> BMCSModel
+BMCSAModel --|> BMCSModel
+
+class PullOutNModel
+class PullOutAModel
+class MKappaModel
+class FragmentationModel
+class BendingModel
+
+PullOutNModel --|> BMCSNModel
+PullOutAModel --|> BMCSAModel
+CrackBridgeNModel --|> BMCSNModel
+CrackBridgeAModel --|> BMCSAModel
+MKappaModel --|> BMCSAModel
+FragmentationModel --|> BMCSAModel
+BendingModel --|> BMCSAModel
+}
+
+
+@enduml

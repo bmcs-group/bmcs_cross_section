@@ -1,0 +1,45 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Streamlit: Run Current App",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "streamlit",
+            "args": [
+                "run",
+                "${file}",
+                "--server.headless",
+                "true"
+            ],
+            "preLaunchTask": "Kill Streamlit Apps",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "serverReadyAction": {
+                "pattern": "Local URL: (http://localhost:[0-9]+)",
+                "uriFormat": "%s",
+                "action": "openExternally"
+            }
+        },
+        {
+            "name": "Streamlit: Component Catalog App",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "streamlit",
+            "args": [
+                "run",
+                "${workspaceFolder}/notebooks/dev/component_catalog_app.py",
+                "--server.headless",
+                "true"
+            ],
+            "preLaunchTask": "Kill Streamlit Apps",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "serverReadyAction": {
+                "pattern": "Local URL: (http://localhost:[0-9]+)",
+                "uriFormat": "%s",
+                "action": "openExternally"
+            }
+        }
+    ]
+}

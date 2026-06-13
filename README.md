@@ -1,1 +1,2 @@
-# bmcs_cross_section
+# SCITE - Structural Concrete Interactive Teaching Environment
+

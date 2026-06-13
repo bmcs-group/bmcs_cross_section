@@ -1,0 +1,47 @@
+# Git files
+.git
+.gitignore
+.gitattributes
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info
+*.egg
+build
+dist
+
+# Virtual environments
+env
+venv
+ENV
+.venv
+
+# IDEs
+.vscode
+.idea
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Jupyter
+.ipynb_checkpoints
+notebooks/temp
+*.ipynb_checkpoints
+
+# Testing
+.pytest_cache
+.coverage
+htmlcov
+.tox
+
+# Documentation builds
+docs/_build
+
+# Local development files
+dev_docs
+*.log
