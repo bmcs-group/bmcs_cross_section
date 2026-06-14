@@ -93,6 +93,10 @@ class BeamDeflectionAnalysis(BMCSModel):
     n_kappa: int = ui_field(150, label="n_κ", unit="-", range=(30, 500))
     n_load_steps: int = ui_field(41, label="n steps", unit="-", range=(11, 101))
     N_Ed: float = ui_field(0.0, label="N_Ed", unit="kN")
+    solve_mode: Literal['positive', 'negative', 'both'] = ui_field(
+        'positive', label='M-κ mode',
+        description="'positive' = sagging only; 'negative' = hogging only; 'both' = full (required for asymmetric sections)"
+    )
 
     # Experimental F-w data for overlay (list of (w_arr, F_arr) pairs)
     exp_data: list = Field(default_factory=list)
@@ -102,7 +106,7 @@ class BeamDeflectionAnalysis(BMCSModel):
     @cached_property
     def mk(self) -> MKappaAnalysis:
         """Solved MKappaAnalysis for the cross-section."""
-        mk = MKappaAnalysis(cs=self.cs, n_kappa=self.n_kappa, N_Ed=self.N_Ed)
+        mk = MKappaAnalysis(cs=self.cs, n_kappa=self.n_kappa, N_Ed=self.N_Ed, solve_mode=self.solve_mode)
         mk.solve()
         return mk
 
@@ -173,17 +177,42 @@ class BeamDeflectionAnalysis(BMCSModel):
         Curvature profile κ(x) [1/mm] for a given moment array M_x [N·mm].
 
         Inverts the ascending branch of the M-κ curve.  Moments beyond M_R
-        are clipped.  Negative (hogging) moments are mapped via the symmetric-
-        section approximation: κ = −κ(|M|).
+        are clipped.
+
+        For sagging moments (M_x ≥ 0) the positive M-κ branch is used.
+        For hogging moments (M_x < 0) the independently solved negative branch
+        is used when available (asymmetric sections), otherwise the sagging
+        branch is mirrored (symmetric-section approximation).
         """
         mk = self.mk
-        idx_peak = int(np.argmax(mk.M_values))
-        M_ref     = mk.M_values[:idx_peak + 1] * 1e6   # kN·m → N·mm
-        kappa_ref = mk.kappa_values[:idx_peak + 1]       # 1/mm
-        M_abs  = np.abs(M_x)
-        M_clip = np.clip(M_abs, 0.0, float(np.max(M_ref)))
-        kappa  = np.interp(M_clip, M_ref, kappa_ref)
-        return np.where(M_x >= 0.0, kappa, -kappa)
+
+        # ── Sagging branch (positive κ) ───────────────────────────────────────
+        idx_peak_sag = int(np.argmax(mk.M_values))
+        M_sag_ref     = mk.M_values[:idx_peak_sag + 1] * 1e6   # kN·m → N·mm
+        kappa_sag_ref = mk.kappa_values[:idx_peak_sag + 1]       # 1/mm
+        M_abs = np.abs(M_x)
+        kappa_sag = np.interp(
+            np.clip(M_abs, 0.0, float(np.max(M_sag_ref))),
+            M_sag_ref, kappa_sag_ref,
+        )
+
+        # ── Hogging branch (negative κ) ───────────────────────────────────────
+        if mk.kappa_neg_values is not None and len(mk.kappa_neg_values) > 0:
+            # Use the independently solved hogging branch (correct for
+            # asymmetric sections with different A_s_top / A_s_bot).
+            idx_peak_hog = int(np.argmin(mk.M_neg_values))
+            # Convert to positive absolute values; both arrays are ascending.
+            M_hog_ref     = np.abs(mk.M_neg_values[:idx_peak_hog + 1]) * 1e6
+            kappa_hog_ref = np.abs(mk.kappa_neg_values[:idx_peak_hog + 1])
+            kappa_hog = np.interp(
+                np.clip(M_abs, 0.0, float(np.max(M_hog_ref))),
+                M_hog_ref, kappa_hog_ref,
+            )
+        else:
+            # Symmetric approximation (fallback / backward compatibility)
+            kappa_hog = kappa_sag
+
+        return np.where(M_x >= 0.0, kappa_sag, -kappa_hog)
 
     def get_kappa_x(self, F: float) -> np.ndarray:
         """

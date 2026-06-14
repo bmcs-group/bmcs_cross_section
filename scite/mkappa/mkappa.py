@@ -12,7 +12,7 @@ Approach:
 Uses conventions from cs_design and cs_components modules.
 """
 
-from typing import Optional, Tuple
+from typing import Literal, Optional, Tuple
 
 import matplotlib.lines as mlines
 import matplotlib.pyplot as plt
@@ -75,6 +75,16 @@ class MKappaAnalysis(BMCSModel):
         le=500,
     )
 
+    solve_mode: Literal['positive', 'negative', 'both'] = ui_field(
+        'both',
+        label="Solve mode",
+        description=(
+            "'positive' = sagging branch only (faster for simply-supported beams); "
+            "'negative' = hogging branch only (faster for parametric x/d studies); "
+            "'both' = full sagging + hogging"
+        ),
+    )
+
     # Tolerance for equilibrium solver
     N_tol: float = ui_field(
         0.01,
@@ -84,11 +94,17 @@ class MKappaAnalysis(BMCSModel):
         description="Axial force tolerance for equilibrium",
     )
 
-    # Solution arrays (computed)
+    # Solution arrays (computed) — positive κ (sagging) branch
     kappa_values: Optional[npt.NDArray[np.float64]] = None
     eps_bot_values: Optional[npt.NDArray[np.float64]] = None
     M_values: Optional[npt.NDArray[np.float64]] = None
     N_values: Optional[npt.NDArray[np.float64]] = None
+
+    # Negative-κ solution arrays (hogging branch, computed in solve())
+    kappa_neg_values: Optional[npt.NDArray[np.float64]] = None
+    eps_bot_neg_values: Optional[npt.NDArray[np.float64]] = None
+    M_neg_values: Optional[npt.NDArray[np.float64]] = None
+    N_neg_values: Optional[npt.NDArray[np.float64]] = None
 
     def get_kappa_range(self) -> Tuple[float, float]:
         """
@@ -126,6 +142,36 @@ class MKappaAnalysis(BMCSModel):
 
         return kappa_min, kappa_max
 
+    def get_kappa_range_neg(self) -> Tuple[float, float]:
+        """
+        Determine curvature range for the hogging (negative κ) branch.
+
+        For hogging the tensile fibre is at the *top*, so the kappa limit is
+        governed by the top reinforcement layer's strain limit (eps_ud_top)
+        combined with the concrete compressive limit at the bottom fibre.
+
+            |κ_max_hog| = (eps_cu + eps_ud_top) / h
+
+        Returns:
+            (kappa_min, kappa_max): Magnitudes [1/mm], both positive.
+                Caller uses them as  np.linspace(-kappa_min, -kappa_max, n).
+        """
+        h = self.cs.h_total
+        eps_cu = abs(self.cs.concrete.eps_cu2_computed)
+
+        eps_su_top = 0.010  # default
+        if self.cs.reinforcement.layers:
+            # Top reinforcement layer has the largest z coordinate
+            top_layer = max(self.cs.reinforcement.layers, key=lambda lay: lay.z)
+            if hasattr(top_layer.material, "eps_ud"):
+                eps_su_top = top_layer.material.eps_ud
+            elif hasattr(top_layer.material, "eps_u"):
+                eps_su_top = top_layer.material.eps_u
+
+        kappa_max_hog = (eps_cu + eps_su_top) / h
+        kappa_min_hog = kappa_max_hog * 0.001
+        return kappa_min_hog, kappa_max_hog
+
     def solve_equilibrium_at_kappa(self, kappa: float) -> Tuple[float, float, float, bool]:
         """
         Solve for ε_bot that gives N ≈ N_Ed at specified curvature.
@@ -149,13 +195,15 @@ class MKappaAnalysis(BMCSModel):
         h = self.cs.h_total
         eps_cu = abs(self.cs.concrete.eps_cu2_computed)
 
-        # Lower bound: top fiber at concrete failure strain (NA at top of section).
-        # ε_top = eps_bot - κ·h = -eps_cu  →  eps_bot = -eps_cu + κ·h
-        #
-        # Using a fixed -0.020 is wrong: for small κ it lands the entire section
-        # past concrete failure AND past FRP compression limit → Fc=Fs=0 → N=0
-        # trivially (degenerate root).  brentq picks it immediately, giving M≡0.
-        eps_bot_min = -eps_cu + kappa * h
+        # Lower bound: compressed fiber at concrete failure strain.
+        # For sagging (κ≥0): top fiber compressed → ε_top = -eps_cu
+        #   ε_top = eps_bot - κ·h = -eps_cu  →  eps_bot_min = -eps_cu + κ·h
+        # For hogging (κ<0): bottom fiber compressed → ε_bot = -eps_cu
+        #   ε_bot = eps_bot = -eps_cu  →  eps_bot_min = -eps_cu
+        if kappa >= 0:
+            eps_bot_min = -eps_cu + kappa * h
+        else:
+            eps_bot_min = -eps_cu
         # For significant axial compression allow going somewhat below that limit
         if self.N_Ed < -100:
             eps_bot_min -= 0.005
@@ -214,64 +262,144 @@ class MKappaAnalysis(BMCSModel):
         For each curvature in the range, solves equilibrium (N = N_Ed) and stores results.
         Stops when equilibrium tolerance is violated (indicates section failure).
         """
-        kappa_min, kappa_max = self.get_kappa_range()
+        failure_threshold = 3
+        tolerance_multiplier = 100.0
 
-        # Create curvature array
-        kappa_array = np.linspace(kappa_min, kappa_max, self.n_kappa)
+        # ── Positive-κ sweep (sagging branch) ────────────────────────────────
+        if self.solve_mode == 'negative':
+            self.kappa_values = np.array([])
+            self.eps_bot_values = np.array([])
+            self.M_values = np.array([])
+            self.N_values = np.array([])
+        else:
+            kappa_min, kappa_max = self.get_kappa_range()
+            kappa_array = np.linspace(kappa_min, kappa_max, self.n_kappa)
 
-        # Initialize result arrays
-        eps_bot_list = []
-        M_list = []
-        N_list = []
-        kappa_list = []
+            eps_bot_list: list = []
+            M_list: list = []
+            N_list: list = []
+            kappa_list: list = []
 
-        # Solve for each curvature until equilibrium tolerance is violated
-        n_failed = 0
-        failure_threshold = 3  # Allow a few tolerance violations before stopping
-        tolerance_multiplier = 100.0  # Allow up to 100x normal tolerance
-        M_max_so_far = 0.0
-        M_peak_reached = False
+            n_failed = 0
+            M_max_so_far = 0.0
+            M_peak_reached = False
 
-        for i, kappa in enumerate(kappa_array):
+            for i, kappa in enumerate(kappa_array):
+                eps_bot, N, M, converged = self.solve_equilibrium_at_kappa(kappa)
+
+                if abs(N) > self.N_tol * tolerance_multiplier:
+                    n_failed += 1
+                    if n_failed >= failure_threshold:
+                        print(
+                            f"Stopping at κ = {kappa*1000:.4f} ‰/mm (equilibrium lost, section failed)"
+                        )
+                        break
+                    continue
+                else:
+                    n_failed = 0
+
+                kappa_list.append(kappa)
+                eps_bot_list.append(eps_bot)
+                N_list.append(N)
+                M_list.append(M)
+
+                if M > M_max_so_far:
+                    M_max_so_far = M
+                    M_peak_reached = True
+
+                if M_peak_reached and M < 0.2 * M_max_so_far:
+                    print(f"Stopping at κ = {kappa*1000:.4f} ‰/mm (M dropped below 20% of peak)")
+                    break
+
+            self.kappa_values = np.array(kappa_list)
+            self.eps_bot_values = np.array(eps_bot_list)
+            self.M_values = np.array(M_list)
+            self.N_values = np.array(N_list)
+
+        # ── Negative-κ sweep (hogging branch) ────────────────────────────────
+        if self.solve_mode == 'positive':
+            self.kappa_neg_values = np.array([])
+            self.eps_bot_neg_values = np.array([])
+            self.M_neg_values = np.array([])
+            self.N_neg_values = np.array([])
+            return
+
+        kappa_min_hog, kappa_max_hog = self.get_kappa_range_neg()
+        kappa_neg_array = np.linspace(-kappa_min_hog, -kappa_max_hog, self.n_kappa)
+
+        eps_bot_neg_list: list = []
+        M_neg_list: list = []
+        N_neg_list: list = []
+        kappa_neg_list: list = []
+
+        n_failed_neg = 0
+        M_min_so_far = 0.0   # tracks most-negative (hogging) peak moment
+        M_peak_neg_reached = False
+
+        for kappa in kappa_neg_array:
             eps_bot, N, M, converged = self.solve_equilibrium_at_kappa(kappa)
 
-            # Check if equilibrium is satisfied (this is the key criterion)
             if abs(N) > self.N_tol * tolerance_multiplier:
-                # Equilibrium badly violated - count as failure
-                n_failed += 1
-                if n_failed >= failure_threshold:
-                    # Stop here - section has failed
+                n_failed_neg += 1
+                if n_failed_neg >= failure_threshold:
                     print(
-                        f"Stopping at κ = {kappa*1000:.4f} ‰/mm (equilibrium lost, section failed)"
+                        f"Stopping hogging sweep at κ = {kappa*1000:.4f} ‰/mm "
+                        f"(equilibrium lost, section failed)"
                     )
                     break
-                # Don't store this point - equilibrium not satisfied
                 continue
             else:
-                # Equilibrium satisfied - reset failure counter
-                n_failed = 0
+                n_failed_neg = 0
 
-            # Store results (only if equilibrium is satisfied)
-            kappa_list.append(kappa)
-            eps_bot_list.append(eps_bot)
-            N_list.append(N)
-            M_list.append(M)
+            kappa_neg_list.append(kappa)
+            eps_bot_neg_list.append(eps_bot)
+            N_neg_list.append(N)
+            M_neg_list.append(M)
 
-            # Track peak moment
-            if M > M_max_so_far:
-                M_max_so_far = M
-                M_peak_reached = True
+            # Track hogging peak (most-negative M)
+            if M < M_min_so_far:
+                M_min_so_far = M
+                M_peak_neg_reached = True
 
-            # Check if moment has dropped below 20% of peak (post-peak softening cutoff)
-            if M_peak_reached and M < 0.2 * M_max_so_far:
-                print(f"Stopping at κ = {kappa*1000:.4f} ‰/mm (M dropped below 20% of peak)")
+            # Stop if moment has recovered past 20 % of hogging peak
+            # (M_min_so_far < 0, so 0.2*M_min_so_far is also negative but
+            #  closer to zero; M > 0.2*M_min_so_far means |M| < 20 % of peak)
+            if M_peak_neg_reached and M > 0.2 * M_min_so_far:
+                print(
+                    f"Stopping hogging sweep at κ = {kappa*1000:.4f} ‰/mm "
+                    f"(M recovered past 20 % of hogging peak)"
+                )
                 break
 
-        # Convert to arrays
-        self.kappa_values = np.array(kappa_list)
-        self.eps_bot_values = np.array(eps_bot_list)
-        self.M_values = np.array(M_list)
-        self.N_values = np.array(N_list)
+        self.kappa_neg_values = np.array(kappa_neg_list)
+        self.eps_bot_neg_values = np.array(eps_bot_neg_list)
+        self.M_neg_values = np.array(M_neg_list)
+        self.N_neg_values = np.array(N_neg_list)
+
+    @property
+    def xd_pos(self) -> float:
+        """x/d at the peak sagging (positive) moment — from actual M-κ strain state."""
+        if self.M_values is None or len(self.M_values) == 0:
+            raise RuntimeError("MKappaAnalysis not solved yet — call .solve() first.")
+        idx = int(np.argmax(self.M_values))
+        p = StressStrainProfile(self.cs, kappa=float(self.kappa_values[idx]),
+                                eps_bottom=float(self.eps_bot_values[idx]))
+        _, _, xd = p.xd
+        return xd
+
+    @property
+    def xd_neg(self) -> float:
+        """x/d at the peak hogging (negative) moment — from actual M-κ strain state.
+
+        Requires solve_mode='both'.
+        """
+        if self.kappa_neg_values is None or len(self.kappa_neg_values) == 0:
+            raise ValueError("Hogging branch not solved — use solve_mode='both'.")
+        idx = int(np.argmin(self.M_neg_values))
+        p = StressStrainProfile(self.cs, kappa=float(self.kappa_neg_values[idx]),
+                                eps_bottom=float(self.eps_bot_neg_values[idx]))
+        _, _, xd = p.xd
+        return xd
 
     def get_failure_mode(self) -> dict:
         """
@@ -354,6 +482,7 @@ class MKappaAnalysis(BMCSModel):
         linewidth: float = 2.0,
         label: str = "M-κ",
         show_failure_marker: bool = False,
+        show_full_range: bool = False,
     ) -> plt.Axes:
         """
         Plot moment-curvature relationship.
@@ -369,6 +498,10 @@ class MKappaAnalysis(BMCSModel):
                 reinforcement rupture, or balanced).  Use
                 ``add_failure_mode_legend(ax)`` afterwards to add the three
                 marker legend entries to the axes.
+            show_full_range: If True, also plot the hogging (negative κ) branch
+                alongside the sagging (positive κ) branch.  The two branches
+                are drawn with the same color and linewidth; only the sagging
+                branch carries the legend label.
 
         Returns:
             Matplotlib axes with plot
@@ -384,8 +517,15 @@ class MKappaAnalysis(BMCSModel):
 
         ax.plot(kappa_permille_mm, self.M_values, color=color, linewidth=linewidth, label=label)
 
+        # Hogging branch (negative κ, negative M)
+        if show_full_range and self.kappa_neg_values is not None and len(self.kappa_neg_values) > 0:
+            kappa_neg_mm = self.kappa_neg_values * 1000.0
+            ax.plot(kappa_neg_mm, self.M_neg_values, color=color, linewidth=linewidth)
+
         if show_failure_marker:
             self._add_failure_marker(ax, color=color)
+            if show_full_range and self.kappa_neg_values is not None and len(self.kappa_neg_values) > 0:
+                self._add_failure_marker_neg(ax, color=color)
 
         ax.set_xlabel("Curvature [1/m]", fontsize=12)
         ax.set_ylabel("Moment M [kN·m]", fontsize=12)
@@ -415,6 +555,60 @@ class MKappaAnalysis(BMCSModel):
         ax.plot(
             self.kappa_values[idx_pk] * 1000.0,
             self.M_values[idx_pk],
+            marker=mstyle,
+            markersize=msize,
+            color=color,
+            markeredgewidth=2.0,
+            markerfacecolor='white',
+            linestyle='none',
+            zorder=5,
+        )
+
+    def _add_failure_marker_neg(
+        self,
+        ax: plt.Axes,
+        color: str = "#1f77b4",
+    ) -> None:
+        """Place a failure-mode marker at the peak of the hogging (negative-κ) branch.
+
+        For hogging the bottom fibre is in compression (concrete governs) and the
+        top fibre is in tension (top reinforcement governs).  The utilisation
+        ratios are therefore:
+            η_c = |ε_bot| / ε_cu   (concrete at bottom compression fibre)
+            η_f = ε_top / ε_ud_top  (top reinforcement at tension fibre)
+        """
+        if self.kappa_neg_values is None or len(self.kappa_neg_values) == 0:
+            return
+
+        idx_pk    = int(np.argmin(self.M_neg_values))
+        kappa_pk  = self.kappa_neg_values[idx_pk]       # negative [1/mm]
+        eps_bot_pk = self.eps_bot_neg_values[idx_pk]    # bottom (compression in hogging)
+        eps_top_pk = eps_bot_pk - kappa_pk * self.cs.h_total  # top (tension in hogging)
+
+        eps_cu = abs(self.cs.concrete.eps_cu2_computed)
+        if self.cs.reinforcement.layers:
+            top_layer = max(self.cs.reinforcement.layers, key=lambda lay: lay.z)
+            eps_ud_top = getattr(top_layer.material, 'eps_ud', None)
+            if eps_ud_top is None:
+                eps_ud_top = getattr(top_layer.material, 'eps_cr', 0.025)
+        else:
+            eps_ud_top = 0.025
+
+        eta_c = abs(eps_bot_pk) / eps_cu    if eps_cu    > 0 else float('nan')
+        eta_f = eps_top_pk      / eps_ud_top if eps_ud_top > 0 else float('nan')
+
+        tol = 0.05
+        if abs(eta_c - eta_f) < tol:
+            mode = 'balanced'
+        elif eta_c > eta_f:
+            mode = 'concrete'
+        else:
+            mode = 'reinforcement'
+
+        mstyle, msize, _ = _FAILURE_MODE_MARKERS[mode]
+        ax.plot(
+            kappa_pk * 1000.0,
+            self.M_neg_values[idx_pk],
             marker=mstyle,
             markersize=msize,
             color=color,
@@ -566,7 +760,8 @@ def create_default_mkappa(N_Ed: float = 0.0) -> MKappaAnalysis:
     Returns:
         MKappaAnalysis with rectangular section and standard reinforcement
     """
-    from scite.cs_design.reinforcement import ReinforcementLayer, ReinforcementLayout
+    from scite.cs_design.reinforcement import (ReinforcementLayer,
+                                               ReinforcementLayout)
     from scite.cs_design.shapes import RectangularShape
     from scite.matmod.ec2_parabola_rectangle import EC2ParabolaRectangle
     from scite.matmod.steel_reinforcement import SteelReinforcement

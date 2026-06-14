@@ -120,9 +120,9 @@ class ContinuousBeamAnalysis:
         phi_x   = _phi_ssb(kappa_x, span.x)
         return float(phi_x[0] if end == 'left' else phi_x[-1])
 
-    # ── residuum ──────────────────────────────────────────────────────────────
+    # ── rotation-compatibility residuals (private) ────────────────────────────
 
-    def residuum(self, M_hog: float) -> float:
+    def _residuum_M_hog(self, M_hog: float) -> float:
         """R(M_hog) = φ_L(L_a) − φ_R(0); zero when rotation compatibility holds.
 
         M_hog [N·mm] ≤ 0 (signed, hogging).  Passed directly as end-moment
@@ -140,12 +140,12 @@ class ContinuousBeamAnalysis:
     # ── elastic estimate (three-moment equation) ─────────────────────────────
 
     @property
-    def M_hog_elastic(self) -> float:
+    def M_el_hog(self) -> float:
         """Elastic hogging moment [N·mm] at interior support (≤ 0, signed).
 
         Clapeyron's three-moment equation (uniform EI):
 
-            M_hog,el = − q (L_a³ + L_b³) / [8 (L_a + L_b)]
+            M_el_hog = − q (L_a³ + L_b³) / [8 (L_a + L_b)]
 
         Reduces to −q L² / 8 for equal spans.
         """
@@ -155,28 +155,18 @@ class ContinuousBeamAnalysis:
 
     # ── solver ────────────────────────────────────────────────────────────────
 
-    def solve(self, xtol: float = 1.0) -> float:
-        """Return M_hog [N·mm] ≤ 0 (signed) via brentq on the residuum.
+    def solve_M_nl_hog(self, xtol: float = 1e-12) -> float:
+        """Return M_nl_hog [N·mm] ≤ 0 for the current q via the κ-controlled solver.
 
-        Bracket: [1.5·M_hog_el, 0].  M_hog_el < 0 so the bracket spans
-        [large hogging, zero].  At M_hog = 0: R > 0 (UDL only, no support
-        moment).  At the lower bound: large hogging reverses the imbalance,
-        R < 0.
+        Uses solve_kappa_hog() for numerical robustness (avoids the M-κ inversion
+        at the interior support), then maps the result back through the forward map.
+
+        Raises
+        ------
+        CompatibilityNoRoot
+            When q ≥ q_u (failure load) and no admissible κ_hog exists.
         """
-        return brentq(self.residuum, 1.5 * self.M_hog_elastic, 0.0, xtol=xtol)
-
-    def solve_over_load(self, q_arr: np.ndarray) -> np.ndarray:
-        """Solve M_hog [N·mm] ≤ 0 for each load level in *q_arr* [N/mm].
-
-        Creates a lightweight copy with a different *q* for each step so the
-        current instance is never mutated (safe for interactive / cached use).
-        """
-        from dataclasses import replace as _replace
-        M_hog_arr = np.empty_like(q_arr)
-        for i, q_i in enumerate(q_arr):
-            cba_i = _replace(self, q=float(q_i))
-            M_hog_arr[i] = cba_i.solve()
-        return M_hog_arr
+        return self._forward_map(self.solve_kappa_hog(xtol))
 
     # ── κ-controlled solver (Strategy C) ─────────────────────────────────────
 
@@ -219,16 +209,16 @@ class ContinuousBeamAnalysis:
         M_ref_Nmm = np.concatenate([[0.0], M_ref_Nmm])
         return -float(np.interp(abs(kappa_hog), kappa_ref, M_ref_Nmm))
 
-    def residuum_kappa(self, kappa_hog: float) -> float:
+    def _residuum_kappa_hog(self, kappa_hog: float) -> float:
         """R(κ_hog) = φ_L(La) − φ_R(0) for κ_hog [1/mm] ≤ 0 (signed).
 
         The hogging moment is obtained via the forward map M_hog = f(κ_hog),
-        then delegated to residuum().  No M-κ inversion at the support.
+        then delegated to _residuum_M_hog().  No M-κ inversion at the support.
         """
-        return self.residuum(self._forward_map(kappa_hog))
+        return self._residuum_M_hog(self._forward_map(kappa_hog))
 
-    def solve_kappa_controlled(self, xtol: float = 1e-12) -> float:
-        """Return κ_hog [1/mm] ≤ 0 (signed) via brentq on the residuum.
+    def solve_kappa_hog(self, xtol: float = 1e-12) -> float:
+        """Return κ_hog [1/mm] ≤ 0 (signed) via brentq on the κ-controlled residual.
 
         Bracket: [κ_{R,hog}, κ_eps] where both are negative and κ_R < κ_eps.
         At κ_eps (near zero, tiny hogging): R > 0.
@@ -243,37 +233,14 @@ class ContinuousBeamAnalysis:
         kappa_R   = self.kappa_R_hog               # negative, e.g. −0.049
         kappa_eps = 1e-8 * kappa_R                 # tiny negative, near zero
 
-        R_at_kappa_R   = self.residuum_kappa(kappa_R)    # expected < 0
-        R_at_kappa_eps = self.residuum_kappa(kappa_eps)  # expected > 0
+        R_at_kappa_R   = self._residuum_kappa_hog(kappa_R)    # expected < 0
+        R_at_kappa_eps = self._residuum_kappa_hog(kappa_eps)  # expected > 0
 
         if R_at_kappa_R * R_at_kappa_eps >= 0:
             raise CompatibilityNoRoot(self.q)
 
         # brentq requires a < b: kappa_R < kappa_eps (both negative, kappa_R more negative)
-        return brentq(self.residuum_kappa, kappa_R, kappa_eps, xtol=xtol)
-
-    def solve_over_load_kappa_controlled(
-        self, q_arr: np.ndarray
-    ) -> Tuple[np.ndarray, np.ndarray]:
-        """Solve κ_hog [1/mm] ≤ 0 for each load in q_arr [N/mm], stopping at failure.
-
-        Returns
-        -------
-        q_valid     : loads for which a root was found (q < q_u)
-        kappa_hog_arr : corresponding κ_hog values [1/mm], signed ≤ 0
-        """
-        from dataclasses import replace as _replace
-
-        q_valid_list: list[float] = []
-        kappa_list: list[float] = []
-        for q_i in q_arr:
-            cba_i = _replace(self, q=float(q_i))
-            try:
-                kappa_list.append(cba_i.solve_kappa_controlled())
-                q_valid_list.append(float(q_i))
-            except CompatibilityNoRoot:
-                break
-        return np.array(q_valid_list), np.array(kappa_list)
+        return brentq(self._residuum_kappa_hog, kappa_R, kappa_eps, xtol=xtol)
 
     # ── q-controlled solver (Strategy D) ─────────────────────────────────────
     #
@@ -281,16 +248,16 @@ class ContinuousBeamAnalysis:
     # brentq unknown.  R(q=0) < 0 is analytically guaranteed for M_hog < 0,
     # so the bracket [0, q_hi] needs no pre-check sign test.
 
-    def residuum_q(self, q: float, M_hog: float) -> float:
+    def _residuum_q(self, q: float, M_hog: float) -> float:
         """R(q; M_hog) = φ_L(L_a) − φ_R(0) with M_hog [N·mm] ≤ 0 prescribed.
 
         Uses a temporary instance with self.q replaced by *q* so that the
-        existing residuum() implementation is reused without modification.
+        existing _residuum_M_hog() implementation is reused without modification.
         """
         from dataclasses import replace as _replace
-        return _replace(self, q=float(q)).residuum(M_hog)
+        return _replace(self, q=float(q))._residuum_M_hog(M_hog)
 
-    def solve_q_from_kappa(self, kappa_hog: float) -> float:
+    def solve_q_for_kappa_hog(self, kappa_hog: float) -> float:
         """Return q [N/mm] satisfying rotation compatibility for prescribed κ_hog ≤ 0.
 
         Bracket: [0, q_hi] where q_hi starts at 4 × the elastic estimate and
@@ -307,21 +274,21 @@ class ContinuousBeamAnalysis:
 
         q_hi = 4.0 * q_el
         for _ in range(5):
-            if self.residuum_q(q_hi, M_hog) > 0:
+            if self._residuum_q(q_hi, M_hog) > 0:
                 break
             q_hi *= 2.0
         else:
             raise CompatibilityNoRoot(q_hi)
 
-        xtol = max(1e-6 * q_el, 1e-8)
+        tol = max(1e-6 * q_el, 1e-8)
         return brentq(
-            lambda q: self.residuum_q(q, M_hog),
+            lambda q: self._residuum_q(q, M_hog),
             0.0,
             q_hi,
-            xtol=xtol,
+            xtol=tol,
         )
 
-    def solve_over_kappa_q_controlled(
+    def _sweep_kappa_hog(
         self,
         progress_cb: Optional[Callable[[float, str], None]] = None,
     ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -329,7 +296,7 @@ class ContinuousBeamAnalysis:
 
         The outer parameter steps through `mk.kappa_neg_values` (signed, ≤ 0)
         or the sagging mirror for symmetric fallback.  The last entry corresponds
-        to κ_hog = κ_{R,hog} and gives the ultimate load q_u directly.
+        to κ_hog = κ_{R,hog} and gives the hogging-failure load q_hog_u directly.
 
         Parameters
         ----------
@@ -358,7 +325,7 @@ class ContinuousBeamAnalysis:
         q_list:     list[float] = []
         for i, kappa_hog in enumerate(kappa_sweep):
             kappa_hog = float(kappa_hog)
-            q         = self.solve_q_from_kappa(kappa_hog)
+            q         = self.solve_q_for_kappa_hog(kappa_hog)
             kappa_list.append(kappa_hog)
             M_hog_list.append(self._forward_map(kappa_hog) / 1e6)   # kN·m, negative
             q_list.append(q)
@@ -454,22 +421,22 @@ class ContinuousBeamAnalysis:
         Parameters
         ----------
         progress_cb : callable(fraction, label), optional
-            Passed through to ``solve_over_kappa_q_controlled``.  Called after
+            Passed through to ``_sweep_kappa_hog``.  Called after
             each κ step with a progress fraction in [0, 1] and a label string.
 
         Returns a dict with keys:
-          kappa_d      [1/mm]  signed hogging curvatures (≤ 0, ascending magnitude)
-          M_hog_d      [kN·m] signed hogging moments (≤ 0)
-          q_d          [N/mm] compatible distributed loads (> 0)
-          M_hog_el_d   [kN·m] elastic M_hog at each sweep step (≤ 0)
-          M_sag_a_d    [kN·m] max NL sagging moment in left span at each step
-          M_sag_b_d    [kN·m] max NL sagging moment in right span at each step
-          M_sag_a_el_d [kN·m] max elastic sagging in left span at each step
-          M_sag_b_el_d [kN·m] max elastic sagging in right span at each step
-          i_yield      int    first index where top reinforcement yields (len if no yield)
-          eps_yd       float  top-bar design yield strain (None if unavailable)
+          kappa_hog    [1/mm]  signed hogging curvatures (≤ 0, ascending magnitude)
+          M_nl_hog     [kN·m]  signed nonlinear hogging moments (≤ 0)
+          q            [N/mm]  compatible distributed loads (> 0)
+          M_el_hog     [kN·m]  elastic M_hog at each sweep step (≤ 0)
+          M_nl_sag_a   [kN·m]  max NL sagging moment in left span at each step
+          M_nl_sag_b   [kN·m]  max NL sagging moment in right span at each step
+          M_el_sag_a   [kN·m]  max elastic sagging in left span at each step
+          M_el_sag_b   [kN·m]  max elastic sagging in right span at each step
+          i_yield      int     first index where top reinforcement yields (len if no yield)
+          eps_yd       float   top-bar design yield strain (None if unavailable)
         """
-        kappa_d, M_hog_d, q_d = self.solve_over_kappa_q_controlled(progress_cb)
+        kappa_d, M_hog_d, q_d = self._sweep_kappa_hog(progress_cb)
         La = self.span_left.L
         Lb = self.span_right.L
         mk = self.span_left.mk
@@ -499,26 +466,118 @@ class ContinuousBeamAnalysis:
                 i_yield = int(np.argmax(yield_mask))
 
         return dict(
-            kappa_d      = kappa_d,
-            M_hog_d      = M_hog_d,
-            q_d          = q_d,
-            M_hog_el_d   = M_hog_el_d,
-            M_sag_a_d    = _M_sag_max(q_d, M_hog_d, La),
-            M_sag_b_d    = _M_sag_max(q_d, M_hog_d, Lb),
-            M_sag_a_el_d = _M_sag_max(q_d, M_hog_el_d, La),
-            M_sag_b_el_d = _M_sag_max(q_d, M_hog_el_d, Lb),
-            i_yield      = i_yield,
-            eps_yd       = eps_yd,
+            kappa_hog  = kappa_d,
+            M_nl_hog   = M_hog_d,
+            q          = q_d,
+            M_el_hog   = M_hog_el_d,
+            M_nl_sag_a = _M_sag_max(q_d, M_hog_d, La),
+            M_nl_sag_b = _M_sag_max(q_d, M_hog_d, Lb),
+            M_el_sag_a = _M_sag_max(q_d, M_hog_el_d, La),
+            M_el_sag_b = _M_sag_max(q_d, M_hog_el_d, Lb),
+            i_yield    = i_yield,
+            eps_yd     = eps_yd,
         )
 
     @cached_property
     def sweep(self) -> dict:
-        """Run Strategy D once and cache the result (no progress callback).
+        """Run the κ-controlled sweep once and cache the result (no progress callback).
 
         For use in notebooks and scripts.  For Streamlit apps with a live
         progress bar, call ``compute_sweep(progress_cb=…)`` directly.
         """
         return self.compute_sweep()
+
+    # ── Fast ultimate-state properties (no sweep required) ────────────────────
+    #
+    # These compute the state at κ_hog = κ_R_hog (hogging section at capacity)
+    # via a single call to solve_q_for_kappa_hog.  Consistent with the last
+    # entry of the sweep dict but much cheaper for callers who only need the
+    # ultimate value.
+
+    @cached_property
+    def q_hog_u(self) -> float:
+        """Ultimate load [N/mm] from hogging section failure (κ_hog = κ_R_hog)."""
+        return self.solve_q_for_kappa_hog(self.kappa_R_hog)
+
+    @cached_property
+    def M_nl_hog_u(self) -> float:
+        """Nonlinear hogging moment at q_hog_u [kN·m], signed ≤ 0."""
+        return self._forward_map(self.kappa_R_hog) / 1e6
+
+    @cached_property
+    def M_el_hog_u(self) -> float:
+        """Elastic hogging moment at q_hog_u [kN·m], signed ≤ 0."""
+        La, Lb = self.span_left.L, self.span_right.L
+        return -self.q_hog_u * (La ** 3 + Lb ** 3) / (8.0 * (La + Lb)) / 1e6
+
+    @cached_property
+    def delta_M_u(self) -> float:
+        """Moment redistribution factor at hogging-governed ultimate state.
+
+        δ_M = |M_nl_hog_u| / |M_el_hog_u|
+
+        Valid when hogging governs (the common design case).  For asymmetric
+        designs where sagging may govern first, check failure_mode_u.
+        """
+        return abs(self.M_nl_hog_u) / abs(self.M_el_hog_u)
+
+    # ── Sweep-based ultimate-state properties (governing failure) ─────────────
+    #
+    # q_u is the true governing failure load across all three potential failure
+    # sections (hog, sag_a, sag_b).  These require the full sweep because the
+    # sagging moment history is only available from the sweep dict.
+
+    @cached_property
+    def q_sag_a_u(self) -> float:
+        """Ultimate load [N/mm] from left span sagging failure; np.inf if not reached."""
+        M_R = self.span_left.M_R       # kN·m — sagging capacity
+        s   = self.sweep
+        if s['M_nl_sag_a'][-1] < M_R:
+            return np.inf
+        return float(np.interp(M_R, s['M_nl_sag_a'], s['q']))
+
+    @cached_property
+    def q_sag_b_u(self) -> float:
+        """Ultimate load [N/mm] from right span sagging failure; np.inf if not reached."""
+        M_R = self.span_right.M_R      # kN·m — sagging capacity
+        s   = self.sweep
+        if s['M_nl_sag_b'][-1] < M_R:
+            return np.inf
+        return float(np.interp(M_R, s['M_nl_sag_b'], s['q']))
+
+    @cached_property
+    def q_u(self) -> float:
+        """Governing ultimate load [N/mm] = min(q_hog_u, q_sag_a_u, q_sag_b_u)."""
+        return min(self.q_hog_u, self.q_sag_a_u, self.q_sag_b_u)
+
+    @cached_property
+    def failure_mode_u(self) -> str:
+        """Governing failure section: 'hog', 'sag_a', or 'sag_b'."""
+        candidates = {
+            'hog':   self.q_hog_u,
+            'sag_a': self.q_sag_a_u,
+            'sag_b': self.q_sag_b_u,
+        }
+        return min(candidates, key=candidates.__getitem__)
+
+    @cached_property
+    def xd_hog_u(self) -> float:
+        """x/d at the hogging (interior support) section at its M-κ peak.
+
+        Delegates to the negative-κ branch of the left-span M-κ curve.
+        Requires the left span to have been solved with solve_mode='both'.
+        """
+        return self.span_left.mk.xd_neg
+
+    @cached_property
+    def xd_sag_a_u(self) -> float:
+        """x/d at the sagging peak of the left-span section."""
+        return self.span_left.mk.xd_pos
+
+    @cached_property
+    def xd_sag_b_u(self) -> float:
+        """x/d at the sagging peak of the right-span section."""
+        return self.span_right.mk.xd_pos
 
     def _design_chars(self) -> dict:
         """Dimensionless design characteristics of the hogging section.
@@ -527,32 +586,40 @@ class ContinuousBeamAnalysis:
         and L/d (effective slenderness), all derived from the hogging section
         geometry and the elastic equivalent span L_eff = √[(La³+Lb³)/(La+Lb)].
 
+        ReinforcementLayer.z is measured from the TOP of the section, so the
+        hogging tension steel (top bars) has the smallest z.  Effective depth
+        in hogging is d_hog = h_total - z_min (distance from bottom face to
+        top steel centroid).
+
         Compression reinforcement (bottom bars) is intentionally ignored:
-        this gives a conservative upper-bound on x/d and a lower-bound on
-        ductility — appropriate for an exploratory design-space sweep.
+        conservative upper-bound on x/d, appropriate for design-space sweeps.
         """
-        cs    = self.span_left.mk.cs
-        b     = float(cs.shape.b)
-        f_ck  = float(cs.concrete.f_ck)
-        f_cd  = f_ck / float(getattr(cs.concrete, 'gamma_c', 1.5))
+        cs     = self.span_left.mk.cs
+        b      = float(cs.shape.b)
+        h      = float(cs.h_total)
+        f_ck   = float(cs.concrete.f_ck)
+        f_cd   = f_ck / float(getattr(cs.concrete, 'gamma_c', 1.5))
         layers = cs.reinforcement.layers
-        top   = max(layers, key=lambda lay: lay.z)   # tension steel in hogging
-        A_s   = float(top.A_s)
-        d_hog = float(top.z)                         # distance from bottom (compression face)
-        f_yd  = float(top.f_yd)
-        La    = self.span_left.L
-        Lb    = self.span_right.L
-        L_eff = float(np.sqrt((La ** 3 + Lb ** 3) / (La + Lb)))
-        rho_l = A_s / (b * d_hog)
-        omega = rho_l * f_yd / f_cd
-        L_d   = L_eff / d_hog
+        # Hogging tension steel = layer closest to the top (minimum z from top)
+        top    = min(layers, key=lambda lay: lay.z)
+        A_s    = float(top.A_s)
+        # d_hog = distance from bottom (compression face in hogging) to top steel
+        d_hog  = h - float(top.z)
+        # f_sy is the design yield strength property on ReinforcementLayer
+        f_yd   = float(getattr(top, 'f_sy', getattr(top, 'f_yd', 435.0)))
+        La     = self.span_left.L
+        Lb     = self.span_right.L
+        L_eff  = float(np.sqrt((La ** 3 + Lb ** 3) / (La + Lb)))
+        rho_l  = A_s / (b * d_hog)
+        omega  = rho_l * f_yd / f_cd
+        L_d    = L_eff / d_hog
         return dict(rho_l=rho_l, omega=omega, L_d=L_d, L_eff=L_eff,
                     d_hog=d_hog, b=b, f_ck=f_ck, f_cd=f_cd, f_yd=f_yd)
 
     def _sweep_vlines(self, ax: plt.Axes) -> None:
         """Draw yield and failure vertical lines on a κ sweep axis."""
         s  = self.sweep
-        kappa_abs = np.abs(s['kappa_d']) * 1e3   # ‰/mm
+        kappa_abs = np.abs(s['kappa_hog']) * 1e3   # ‰/mm
         i_yield   = s['i_yield']
         n         = len(kappa_abs)
         if i_yield < n:
@@ -575,8 +642,8 @@ class ContinuousBeamAnalysis:
             _, ax = plt.subplots(figsize=(9, 3))
 
         s             = self.sweep
-        kappa_abs     = np.abs(s['kappa_d']) * 1e3   # ‰/mm
-        q_d           = s['q_d']
+        kappa_abs     = np.abs(s['kappa_hog']) * 1e3   # ‰/mm
+        q_d           = s['q']
         i_yield       = s['i_yield']
         q_u           = q_d[-1]
         n             = len(kappa_abs)
@@ -617,7 +684,7 @@ class ContinuousBeamAnalysis:
         mode_label = ''
         try:
             from scite.cs_design.cs_stress_strain_profile import StressStrainProfile
-            k_last  = float(s['kappa_d'][-1])
+            k_last  = float(s['kappa_hog'][-1])
             eb_last = float(mk.eps_bot_neg_values[idx_pk]) if idx_pk >= 0 else 0.0
             p       = StressStrainProfile(mk.cs, kappa=k_last, eps_bottom=eb_last)
             mode_label = p.failure_mode
@@ -676,10 +743,10 @@ class ContinuousBeamAnalysis:
             _, ax = plt.subplots(figsize=(9, 4))
 
         s          = self.sweep
-        kappa_abs  = np.abs(s['kappa_d']) * 1e3   # ‰/mm
-        M_hog_abs  = np.abs(s['M_hog_d'])
-        M_sag_a    = s['M_sag_a_d']
-        M_sag_b    = s['M_sag_b_d']
+        kappa_abs  = np.abs(s['kappa_hog']) * 1e3   # ‰/mm
+        M_hog_abs  = np.abs(s['M_nl_hog'])
+        M_sag_a    = s['M_nl_sag_a']
+        M_sag_b    = s['M_nl_sag_b']
         n          = len(kappa_abs)
         La         = self.span_left.L
         Lb         = self.span_right.L
@@ -688,7 +755,7 @@ class ContinuousBeamAnalysis:
         C_SAG      = '#4488cc'     # NL sagging — lighter blue
         C_EL       = '#cc2222'     # elastic reference — red
 
-        M_hog_el_at_qu = abs(s['M_hog_el_d'][-1])
+        M_hog_el_at_qu = abs(s['M_el_hog'][-1])
         M_R_hog        = M_hog_abs[-1]
         delta_M        = M_R_hog / M_hog_el_at_qu
 
@@ -771,14 +838,14 @@ class ContinuousBeamAnalysis:
             _, ax = plt.subplots(figsize=(9, 3.5))
 
         s   = self.sweep
-        n   = len(s['kappa_d'])
+        n   = len(s['kappa_hog'])
         idx = int(np.clip(kappa_idx if kappa_idx >= 0 else n - 1, 0, n - 1))
         La  = self.span_left.L
         Lb  = self.span_right.L
 
-        q_step        = float(s['q_d'][idx])
-        M_hog_Nmm     = float(s['M_hog_d'][idx]) * 1e6      # NL hogging, N·mm, signed ≤ 0
-        M_hog_el_Nmm  = float(s['M_hog_el_d'][idx]) * 1e6   # elastic hogging at same q
+        q_step        = float(s['q'][idx])
+        M_hog_Nmm     = float(s['M_nl_hog'][idx]) * 1e6      # NL hogging, N·mm, signed ≤ 0
+        M_hog_el_Nmm  = float(s['M_el_hog'][idx]) * 1e6      # elastic hogging at same q
 
         from dataclasses import replace as _replace
         cba_step = _replace(self, q=q_step)
@@ -824,9 +891,9 @@ class ContinuousBeamAnalysis:
 
         # ── Fixed y-limits from the ultimate state ────────────────────────────
         # Both NL and elastic values at the last sweep step define the fixed range
-        y_min_ult = min(float(s['M_hog_d'][-1]), float(s['M_hog_el_d'][-1])) * 1.12
-        y_max_ult = max(float(s['M_sag_a_d'][-1]),    float(s['M_sag_b_d'][-1]),
-                        float(s['M_sag_a_el_d'][-1]),  float(s['M_sag_b_el_d'][-1])) * 1.12
+        y_min_ult = min(float(s['M_nl_hog'][-1]), float(s['M_el_hog'][-1])) * 1.12
+        y_max_ult = max(float(s['M_nl_sag_a'][-1]), float(s['M_nl_sag_b'][-1]),
+                        float(s['M_el_sag_a'][-1]),  float(s['M_el_sag_b'][-1])) * 1.12
         ax.set_ylim(y_min_ult, y_max_ult)
 
         ax.invert_yaxis()   # sagging below axis (structural convention)
@@ -985,9 +1052,9 @@ class ContinuousBeamAnalysis:
             _, ax = plt.subplots(figsize=(10, 4))
 
         La        = self.span_left.L
-        M_hog_el  = self.M_hog_elastic    # negative
+        M_hog_el  = self.M_el_hog         # negative
         if M_hog_nl is None:
-            M_hog_nl  = self.solve()       # negative
+            M_hog_nl  = self.solve_M_nl_hog()   # negative
 
         cases: list = []
         if show_elastic:
@@ -1037,9 +1104,9 @@ class ContinuousBeamAnalysis:
 
         La       = self.span_left.L
         Lb       = self.span_right.L
-        M_hog_el = self.M_hog_elastic
+        M_hog_el = self.M_el_hog
         if M_hog_nl is None:
-            M_hog_nl = self.solve()
+            M_hog_nl = self.solve_M_nl_hog()
 
         if show_elastic:
             x_a, w_a, x_b, w_b = self.elastic_w_profiles(M_hog_el)
@@ -1080,7 +1147,8 @@ class ContinuousBeamAnalysis:
         if q_arr is None:
             q_arr = np.linspace(1e-3 * self.q, 2.0 * self.q, 40)
 
-        M_hog_arr = self.solve_over_load(q_arr)
+        from dataclasses import replace as _replace
+        M_hog_arr = np.array([_replace(self, q=float(q_i)).solve_M_nl_hog() for q_i in q_arr])
         M_el_arr  = -q_arr * (La ** 3 + Lb ** 3) / (8.0 * (La + Lb))   # negative
 
         ax.plot(q_arr, M_hog_arr / M_el_arr, color=color, lw=2.0,
@@ -1096,7 +1164,7 @@ class ContinuousBeamAnalysis:
     def plot_summary(self, title: str = '', M_hog_nl: Optional[float] = None) -> None:
         """3-panel summary: beam scheme | M diagram | deflection profile."""
         if M_hog_nl is None:
-            M_hog_nl = self.solve()
+            M_hog_nl = self.solve_M_nl_hog()
         fig, axes = plt.subplots(
             3, 1,
             figsize=(12, 10),

@@ -138,7 +138,95 @@ class StressStrainProfile:
     def eps_top(self) -> float:
         """Convenience property: strain at top (z=0)."""
         return self.eps_bottom - self.kappa * self.cs.h_total
-    
+
+    @property
+    def xd(self) -> Tuple[float, float, float]:
+        """Neutral axis depth ratio (x, d, x/d) — EC2-compatible.
+
+        x: depth of neutral axis from the compressed fiber [mm]
+        d: effective depth from compressed fiber to centroid of tension steel [mm]
+        Returns (nan, nan, nan) when κ = 0.
+        """
+        kappa = self.kappa
+        if abs(kappa) < 1e-12:
+            nan = float('nan')
+            return nan, nan, nan
+
+        h = self.cs.h_total
+        z_na = self.eps_bottom / kappa  # neutral axis height from bottom [mm]
+        layers = self.cs.reinforcement.layers
+
+        if kappa >= 0:  # sagging: compression at top, tension at bottom
+            x = h - z_na
+            tens = [(l.z, l.A_s) for l in layers if l.z < z_na]
+            if tens:
+                A_tot = sum(A for _, A in tens)
+                z_c = sum(z * A for z, A in tens) / A_tot
+                d = h - z_c  # top fiber to tension steel centroid
+            else:
+                d = h
+        else:  # hogging: compression at bottom, tension at top
+            x = z_na
+            tens = [(l.z, l.A_s) for l in layers if l.z > z_na]
+            if tens:
+                A_tot = sum(A for _, A in tens)
+                z_c = sum(z * A for z, A in tens) / A_tot
+                d = z_c  # bottom fiber to tension steel centroid
+            else:
+                d = h - z_na
+
+        x = max(float(x), 0.0)
+        d = max(float(d), 1.0)
+        return x, d, x / d
+
+    @property
+    def failure_mode(self) -> str:
+        """Dominant failure mode at the current strain state.
+
+        Checks compressed-fiber concrete strain and tension-steel strain
+        against material limits. Returns one of:
+        'concrete crushing', 'steel rupture', 'steel yielded', 'elastic'.
+        """
+        kappa = self.kappa
+        h = self.cs.h_total
+        layers = self.cs.reinforcement.layers
+
+        eps_cu = abs(self.cs.concrete.eps_cu2_computed)
+        main_mat = self.cs.reinforcement.layers[0].material
+        eps_yd = main_mat.eps_yd
+        eps_ud = getattr(main_mat, 'eps_ud', getattr(main_mat, 'eps_cr', 0.025))
+
+        # Compressed-fiber strain (absolute value)
+        if kappa >= 0:
+            eps_comp = abs(self.eps_top)   # compression at top for sagging
+        else:
+            eps_comp = abs(self.eps_bottom)  # compression at bottom for hogging
+
+        # Tension-steel strain: centroid of tension reinforcement
+        if abs(kappa) > 1e-12:
+            z_na = self.eps_bottom / kappa
+        else:
+            z_na = h / 2
+        if kappa >= 0:
+            tens = [l for l in layers if l.z < z_na]
+        else:
+            tens = [l for l in layers if l.z > z_na]
+
+        if tens:
+            A_tot = sum(l.A_s for l in tens)
+            z_c = sum(l.A_s * l.z for l in tens) / A_tot
+            eps_tens = abs(self.eps_bottom - kappa * z_c)
+        else:
+            eps_tens = 0.0
+
+        if eps_comp >= eps_cu * 0.99:
+            return 'concrete crushing'
+        if eps_tens >= eps_ud * 0.99:
+            return 'steel rupture'
+        if eps_tens >= eps_yd * 0.99:
+            return 'steel yielded'
+        return 'elastic'
+
     def get_strain_at_z(self, z: float | npt.NDArray[np.float64]) -> float | npt.NDArray[np.float64]:
         """
         Calculate strain at height z using plane section assumption.

@@ -13,9 +13,10 @@ ContinuousBeamAnalysis — iterative solver for the interior support moment M_ho
                          summary).
 _phi_ssb               — standalone SSB rotation helper (w(0)=w(L)=0 BC).
 """
-from .continuous_beam import ContinuousBeamAnalysis, _phi_ssb
+from .continuous_beam import ContinuousBeamAnalysis, CompatibilityNoRoot, _phi_ssb
 
 __all__ = [
     "ContinuousBeamAnalysis",
+    "CompatibilityNoRoot",
     "_phi_ssb",
 ]
