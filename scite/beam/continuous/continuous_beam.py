@@ -50,6 +50,33 @@ def _M_sag_max(
     return (q_a * 0.5 * x_star * (L - x_star) + M_Nmm * (x_star / L)) / 1e6
 
 
+def _kappa_at_max_def(
+    span: "BeamDeflectionAnalysis",
+    q: float,
+    M_hog_Nmm: float,
+    end_side: str,
+) -> float:
+    """Curvature [1/mm] at the point of maximum deflection in a span.
+
+    Parameters
+    ----------
+    span      : BeamDeflectionAnalysis for the span
+    q         : distributed load [N/mm]
+    M_hog_Nmm : signed hogging moment at the interior support [N·mm] (≤ 0)
+    end_side  : ``'right'`` if the interior support is at x=L (left span),
+                ``'left'`` if it is at x=0 (right span)
+    """
+    x = span.x
+    if end_side == 'right':
+        M_x = span.get_M_x(q, M_end_right=M_hog_Nmm)
+    else:
+        M_x = span.get_M_x(q, M_end_left=M_hog_Nmm)
+    kappa_x = span.get_kappa_x_from_M(M_x)
+    phi_x   = _phi_ssb(kappa_x, x)
+    w_x     = -cumtrapz(phi_x, x, initial=0.0)
+    return float(kappa_x[int(np.argmax(w_x))])
+
+
 class CompatibilityNoRoot(Exception):
     """Raised when no root exists in the admissible κ_hog domain.
 
@@ -189,25 +216,9 @@ class ContinuousBeamAnalysis:
     def _forward_map(self, kappa_hog: float) -> float:
         """Map κ_hog [1/mm] (≤ 0, signed) → M_hog [N·mm] (≤ 0, signed).
 
-        Uses the ascending sub-segment of the hogging branch (magnitudes for
-        np.interp which requires ascending x); result is negated before return.
-        For symmetric sections without a neg branch, the sagging mirror is used.
+        Delegates to ``MKappaAnalysis.M_from_kappa``.
         """
-        mk = self.span_left.mk
-        if mk.kappa_neg_values is not None and len(mk.kappa_neg_values) > 0:
-            idx_peak = int(np.argmin(mk.M_neg_values))
-            kappa_ref = np.abs(mk.kappa_neg_values[:idx_peak + 1])   # magnitudes, ascending
-            M_ref_Nmm = np.abs(mk.M_neg_values[:idx_peak + 1]) * 1e6  # magnitudes, ascending
-        else:
-            idx_peak = int(np.argmax(mk.M_values))
-            kappa_ref = mk.kappa_values[:idx_peak + 1]
-            M_ref_Nmm = mk.M_values[:idx_peak + 1] * 1e6
-        # Ensure the map passes through (0, 0): the M-κ table starts at a
-        # small non-zero kappa, so np.interp would clamp at the first entry
-        # for kappa < kappa_ref[0] — prepending the origin fixes this.
-        kappa_ref = np.concatenate([[0.0], kappa_ref])
-        M_ref_Nmm = np.concatenate([[0.0], M_ref_Nmm])
-        return -float(np.interp(abs(kappa_hog), kappa_ref, M_ref_Nmm))
+        return float(self.span_left.mk.M_from_kappa(np.array([kappa_hog]))[0])
 
     def _residuum_kappa_hog(self, kappa_hog: float) -> float:
         """R(κ_hog) = φ_L(La) − φ_R(0) for κ_hog [1/mm] ≤ 0 (signed).
@@ -318,6 +329,10 @@ class ContinuousBeamAnalysis:
         else:
             idx_peak    = int(np.argmax(mk.M_values))
             kappa_sweep = -mk.kappa_values[:idx_peak + 1]       # negate to make hogging negative
+
+        # Drop the injected origin (κ=0, M=0) — solve_q_for_kappa_hog cannot
+        # bracket a root when M_hog=0 produces q_el=0 (IEEE-754 −0 loops forever).
+        kappa_sweep = kappa_sweep[kappa_sweep != 0.0]
 
         n = len(kappa_sweep)
         kappa_list: list[float] = []
@@ -433,6 +448,10 @@ class ContinuousBeamAnalysis:
           M_nl_sag_b   [kN·m]  max NL sagging moment in right span at each step
           M_el_sag_a   [kN·m]  max elastic sagging in left span at each step
           M_el_sag_b   [kN·m]  max elastic sagging in right span at each step
+          kappa_sag_a  [1/mm]  curvature at max-sagging-moment section, left span
+          kappa_sag_b  [1/mm]  curvature at max-sagging-moment section, right span
+          kappa_def_a  [1/mm]  curvature at max-deflection section, left span
+          kappa_def_b  [1/mm]  curvature at max-deflection section, right span
           i_yield      int     first index where top reinforcement yields (len if no yield)
           eps_yd       float   top-bar design yield strain (None if unavailable)
         """
@@ -443,14 +462,39 @@ class ContinuousBeamAnalysis:
 
         M_hog_el_d = -q_d * (La ** 3 + Lb ** 3) / (8.0 * (La + Lb)) / 1e6  # [kN·m]
 
-        # Yield detection — top fibre of the hogging section
+        # Sagging moments from non-zero steps (avoids 0/0 at the origin).
+        M_nl_sag_a = _M_sag_max(q_d, M_hog_d, La)
+        M_nl_sag_b = _M_sag_max(q_d, M_hog_d, Lb)
+        M_el_sag_a = _M_sag_max(q_d, M_hog_el_d, La)
+        M_el_sag_b = _M_sag_max(q_d, M_hog_el_d, Lb)
+
+        # Curvature at max sagging moment — vectorized M-κ inversion.
+        mk_a = self.span_left.mk
+        mk_b = self.span_right.mk
+        kappa_sag_a = mk_a.kappa_from_M(M_nl_sag_a * 1e6)
+        kappa_sag_b = mk_b.kappa_from_M(M_nl_sag_b * 1e6)
+
+        # Curvature at max deflection — per-step integration of κ(x) → φ(x) → w(x).
+        M_hog_Nmm = M_hog_d * 1e6   # kN·m → N·mm
+        kappa_def_a = np.array([
+            _kappa_at_max_def(self.span_left,  float(q_i), float(mh_i), 'right')
+            for q_i, mh_i in zip(q_d, M_hog_Nmm)
+        ])
+        kappa_def_b = np.array([
+            _kappa_at_max_def(self.span_right, float(q_i), float(mh_i), 'left')
+            for q_i, mh_i in zip(q_d, M_hog_Nmm)
+        ])
+
+        # Yield detection — top fibre of the hogging section.
+        # kappa_d has n entries starting at the first non-zero κ (origin excluded);
+        # eps_bot_neg_values[0] is the injected origin so the aligned slice is [1:n+1].
         n        = len(kappa_d)
         eps_yd   = None
-        i_yield  = n  # default: no yield detected
+        i_yield  = n + 1  # default: no yield (one past end of the prepended array)
 
         if (
             mk.eps_bot_neg_values is not None
-            and len(mk.eps_bot_neg_values) >= n
+            and len(mk.eps_bot_neg_values) >= n + 1
             and mk.cs.reinforcement.layers
         ):
             top_layer = max(mk.cs.reinforcement.layers, key=lambda lay: lay.z)
@@ -459,23 +503,31 @@ class ContinuousBeamAnalysis:
                               getattr(top_layer, 'eps_yd', None) or
                               getattr(top_layer.material, 'eps_yd', 0.002174)))
             h         = float(mk.cs.h_total)
-            eps_bot   = mk.eps_bot_neg_values[:n]
+            eps_bot   = mk.eps_bot_neg_values[1:n + 1]   # skip origin at index 0
             eps_top   = eps_bot - kappa_d * h   # top fibre (tension in hogging)
             yield_mask = eps_top >= eps_yd
             if yield_mask.any():
-                i_yield = int(np.argmax(yield_mask))
+                i_yield = int(np.argmax(yield_mask)) + 1  # +1: accounts for prepended origin
+
+        # Prepend the zero-load origin so all arrays start at (κ=0, q=0, M=0).
+        def _pre(arr: np.ndarray) -> np.ndarray:
+            return np.concatenate([[0.0], arr])
 
         return dict(
-            kappa_hog  = kappa_d,
-            M_nl_hog   = M_hog_d,
-            q          = q_d,
-            M_el_hog   = M_hog_el_d,
-            M_nl_sag_a = _M_sag_max(q_d, M_hog_d, La),
-            M_nl_sag_b = _M_sag_max(q_d, M_hog_d, Lb),
-            M_el_sag_a = _M_sag_max(q_d, M_hog_el_d, La),
-            M_el_sag_b = _M_sag_max(q_d, M_hog_el_d, Lb),
-            i_yield    = i_yield,
-            eps_yd     = eps_yd,
+            kappa_hog   = _pre(kappa_d),
+            M_nl_hog    = _pre(M_hog_d),
+            q           = _pre(q_d),
+            M_el_hog    = _pre(M_hog_el_d),
+            M_nl_sag_a  = _pre(M_nl_sag_a),
+            M_nl_sag_b  = _pre(M_nl_sag_b),
+            M_el_sag_a  = _pre(M_el_sag_a),
+            M_el_sag_b  = _pre(M_el_sag_b),
+            kappa_sag_a = _pre(kappa_sag_a),
+            kappa_sag_b = _pre(kappa_sag_b),
+            kappa_def_a = _pre(kappa_def_a),
+            kappa_def_b = _pre(kappa_def_b),
+            i_yield     = i_yield,
+            eps_yd      = eps_yd,
         )
 
     @cached_property
@@ -595,7 +647,8 @@ class ContinuousBeamAnalysis:
         conservative upper-bound on x/d, appropriate for design-space sweeps.
         """
         cs     = self.span_left.mk.cs
-        b      = float(cs.shape.b)
+        shape  = cs.shape
+        b      = float(shape.b if hasattr(shape, 'b') else getattr(shape, 'b_w', 300.0))
         h      = float(cs.h_total)
         f_ck   = float(cs.concrete.f_ck)
         f_cd   = f_ck / float(getattr(cs.concrete, 'gamma_c', 1.5))
@@ -630,6 +683,11 @@ class ContinuousBeamAnalysis:
         self,
         ax: Optional[plt.Axes] = None,
         kappa_idx: Optional[int] = None,
+        *,
+        color: Optional[str] = None,
+        ls: str = '-',
+        label_suffix: str = '',
+        show_annotations: bool = True,
     ) -> plt.Axes:
         """Panel 1: distributed load q vs |κ_hog| along the Strategy D sweep.
 
@@ -637,6 +695,15 @@ class ContinuousBeamAnalysis:
         ----------
         kappa_idx : int, optional
             When given, draw a vertical marker at this sweep step.
+        color : str, optional
+            Override the main curve colour (both pre- and post-yield segments).
+        ls : str
+            Linestyle for the main curve (default ``'-'``).
+        label_suffix : str
+            Appended to every legend label (e.g. ``'  (design)'``).
+        show_annotations : bool
+            When *False*, suppress text-box annotations (design-chars, yield,
+            failure).  Set to *False* when overlaying multiple modes.
         """
         if ax is None:
             _, ax = plt.subplots(figsize=(9, 3))
@@ -649,74 +716,77 @@ class ContinuousBeamAnalysis:
         n             = len(kappa_abs)
         C_FAIL        = '#d62728'
         C_YLD         = '#2ca02c'
+        c_pre         = color if color is not None else 'steelblue'
+        c_post        = color if color is not None else '#9467bd'
 
         # pre-yield segment (always present)
         ax.plot(
             kappa_abs[:i_yield + 1], q_d[:i_yield + 1],
-            '-', color='steelblue', lw=2.0, label='$q$  pre-yield',
+            ls, color=c_pre, lw=2.0, label=f'$q$  pre-yield{label_suffix}',
         )
         # post-yield segment (if any)
         if i_yield < n - 1:
             ax.plot(
                 kappa_abs[i_yield:], q_d[i_yield:],
-                '-', color='#9467bd', lw=2.0, label='$q$  post-yield',
+                ls, color=c_post, lw=2.0, label=f'$q$  post-yield{label_suffix}',
             )
 
         ax.axhline(q_u, color=C_FAIL, ls=':', lw=1.0,
-                   label=f'$q_u$ = {q_u:.2f} N/mm')
+                   label=f'$q_u$ = {q_u:.2f} N/mm{label_suffix}')
         self._sweep_vlines(ax)
 
-        # yield annotation
-        if i_yield < n and s['eps_yd'] is not None:
-            eps_yd = s['eps_yd']
-            ax.annotate(
-                f'top-bar yield\n$\\varepsilon_{{yd}}={eps_yd * 1e3:.2f}$‰',
-                xy=(kappa_abs[i_yield], q_d[i_yield]),
-                xytext=(kappa_abs[i_yield], 0.70 * q_u),
-                arrowprops=dict(arrowstyle='->', color=C_YLD, lw=1.2),
-                color=C_YLD, fontsize=8.5, ha='left', va='top',
-            )
-        # failure annotation
-        mk      = self.span_left.mk
-        idx_pk  = int(np.argmin(mk.M_neg_values)) if (
-            mk.M_neg_values is not None and len(mk.M_neg_values) > 0
-        ) else -1
-        mode_label = ''
-        try:
-            from scite.cs_design.cs_stress_strain_profile import StressStrainProfile
-            k_last  = float(s['kappa_hog'][-1])
-            eb_last = float(mk.eps_bot_neg_values[idx_pk]) if idx_pk >= 0 else 0.0
-            p       = StressStrainProfile(mk.cs, kappa=k_last, eps_bottom=eb_last)
-            mode_label = p.failure_mode
-        except Exception:
-            pass
+        if show_annotations:
+            # yield annotation
+            if i_yield < n and s['eps_yd'] is not None:
+                eps_yd = s['eps_yd']
+                ax.annotate(
+                    f'top-bar yield\n$\\varepsilon_{{yd}}={eps_yd * 1e3:.2f}$‰',
+                    xy=(kappa_abs[i_yield], q_d[i_yield]),
+                    xytext=(kappa_abs[i_yield], 0.70 * q_u),
+                    arrowprops=dict(arrowstyle='->', color=C_YLD, lw=1.2),
+                    color=C_YLD, fontsize=8.5, ha='left', va='top',
+                )
+            # failure annotation
+            mk      = self.span_left.mk
+            idx_pk  = int(np.argmin(mk.M_neg_values)) if (
+                mk.M_neg_values is not None and len(mk.M_neg_values) > 0
+            ) else -1
+            mode_label = ''
+            try:
+                from scite.cs_design.cs_stress_strain_profile import StressStrainProfile
+                k_last  = float(s['kappa_hog'][-1])
+                eb_last = float(mk.eps_bot_neg_values[idx_pk]) if idx_pk >= 0 else 0.0
+                p       = StressStrainProfile(mk.cs, kappa=k_last, eps_bottom=eb_last)
+                mode_label = p.failure_mode
+            except Exception:
+                pass
 
-        ax.annotate(
-            f'$q_u$={q_u:.2f}' + (f'\n{mode_label}' if mode_label else ''),
-            xy=(kappa_abs[-1], q_u),
-            xytext=(kappa_abs[-1], 0.70 * q_u),
-            arrowprops=dict(arrowstyle='->', color=C_FAIL, lw=1.2),
-            color=C_FAIL, fontsize=8.5, ha='right', va='top',
-        )
+            ax.annotate(
+                f'$q_u$={q_u:.2f}' + (f'\n{mode_label}' if mode_label else ''),
+                xy=(kappa_abs[-1], q_u),
+                xytext=(kappa_abs[-1], 0.70 * q_u),
+                arrowprops=dict(arrowstyle='->', color=C_FAIL, lw=1.2),
+                color=C_FAIL, fontsize=8.5, ha='right', va='top',
+            )
+
+            # design characteristics annotation
+            dc = self._design_chars()
+            ax.text(
+                0.02, 0.98,
+                f'$\\rho_l$ = {dc["rho_l"]:.4f}'
+                f'    $\\omega$ = {dc["omega"]:.3f}'
+                f'    $L/d$ = {dc["L_d"]:.1f}',
+                transform=ax.transAxes, ha='left', va='top', fontsize=9,
+                bbox=dict(boxstyle='round,pad=0.35', facecolor='#f8f8f8',
+                          edgecolor='#aaaaaa', alpha=0.92),
+            )
 
         # current-step marker
         if kappa_idx is not None:
             idx = int(np.clip(kappa_idx, 0, n - 1))
             ax.axvline(kappa_abs[idx], color='gray', lw=1.2, ls='-', alpha=0.7, zorder=3)
             ax.scatter([kappa_abs[idx]], [q_d[idx]],
-                       color='steelblue', s=50, zorder=5)
-
-        # ── Design characteristics annotation ─────────────────────────────────
-        dc = self._design_chars()
-        ax.text(
-            0.02, 0.98,
-            f'$\\rho_l$ = {dc["rho_l"]:.4f}'
-            f'    $\\omega$ = {dc["omega"]:.3f}'
-            f'    $L/d$ = {dc["L_d"]:.1f}',
-            transform=ax.transAxes, ha='left', va='top', fontsize=9,
-            bbox=dict(boxstyle='round,pad=0.35', facecolor='#f8f8f8',
-                      edgecolor='#aaaaaa', alpha=0.92),
-        )
+                       color=c_pre, s=50, zorder=5)
 
         ax.set_ylabel('$q$  [N/mm]', fontsize=11)
         ax.legend(fontsize=11, loc='lower right')
@@ -727,6 +797,11 @@ class ContinuousBeamAnalysis:
         self,
         ax: Optional[plt.Axes] = None,
         kappa_idx: Optional[int] = None,
+        *,
+        color: Optional[str] = None,
+        ls: str = '-',
+        label_suffix: str = '',
+        show_annotations: bool = True,
     ) -> plt.Axes:
         """Panel 2: |M_hog| and M_sag moments vs |κ_hog| along the sweep.
 
@@ -738,6 +813,15 @@ class ContinuousBeamAnalysis:
         ----------
         kappa_idx : int, optional
             When given, add scatter markers and annotate the current step's values.
+        color : str, optional
+            Override the main curve colour (both hogging and sagging lines).
+        ls : str
+            Linestyle for the hogging curve; sagging uses ``'--'`` relative to
+            the hogging style (ignored when ``color`` is *None*).
+        label_suffix : str
+            Appended to every legend label (e.g. ``'  (design)'``).
+        show_annotations : bool
+            When *False*, suppress the reference-values text box.
         """
         if ax is None:
             _, ax = plt.subplots(figsize=(9, 4))
@@ -751,9 +835,9 @@ class ContinuousBeamAnalysis:
         La         = self.span_left.L
         Lb         = self.span_right.L
         bda        = self.span_left
-        C_HOG      = 'steelblue'   # redistributed hogging — blue
-        C_SAG      = '#4488cc'     # NL sagging — lighter blue
-        C_EL       = '#cc2222'     # elastic reference — red
+        C_HOG      = color if color is not None else 'steelblue'
+        C_SAG      = color if color is not None else '#4488cc'
+        C_EL       = '#cc2222'     # elastic reference — red (never overridden)
 
         M_hog_el_at_qu = abs(s['M_el_hog'][-1])
         M_R_hog        = M_hog_abs[-1]
@@ -762,21 +846,25 @@ class ContinuousBeamAnalysis:
         sym = abs(La - Lb) < 1.0   # spans equal to within 1 mm
 
         # ── Curve lines — these go into the left legend ───────────────────────
-        h_hog, = ax.plot(kappa_abs, M_hog_abs, '-', color=C_HOG, lw=2.0)
+        h_hog, = ax.plot(kappa_abs, M_hog_abs, ls, color=C_HOG, lw=2.0,
+                         label=f'$|M_{{hog}}|${label_suffix}')
         if sym:
-            h_sag_a, = ax.plot(kappa_abs, M_sag_a, '--', color=C_SAG, lw=2.0)
+            h_sag_a, = ax.plot(kappa_abs, M_sag_a, '--', color=C_SAG, lw=2.0,
+                                label=f'$M_{{sag,max}}${label_suffix}')
             curve_handles = [h_hog, h_sag_a]
-            curve_labels  = ['$|M_{hog}|$', '$M_{sag,max}$']
+            curve_labels  = [h_hog.get_label(), h_sag_a.get_label()]
         else:
-            h_sag_a, = ax.plot(kappa_abs, M_sag_a, '--', color=C_SAG, lw=2.0)
-            h_sag_b, = ax.plot(kappa_abs, M_sag_b, ':',  color=C_SAG, lw=2.0)
+            h_sag_a, = ax.plot(kappa_abs, M_sag_a, '--', color=C_SAG, lw=2.0,
+                                label=f'$M_{{sag,a}}$ (left){label_suffix}')
+            h_sag_b, = ax.plot(kappa_abs, M_sag_b, ':',  color=C_SAG, lw=2.0,
+                                label=f'$M_{{sag,b}}$ (right){label_suffix}')
             curve_handles = [h_hog, h_sag_a, h_sag_b]
-            curve_labels  = ['$|M_{hog}|$', '$M_{sag,a}$ (left)', '$M_{sag,b}$ (right)']
+            curve_labels  = [h_hog.get_label(), h_sag_a.get_label(), h_sag_b.get_label()]
 
         # ── Reference axhlines — no legend labels ─────────────────────────────
-        ax.axhline(bda.M_R,        color=C_HOG, ls=':', lw=1.2)   # M_R,sag — blue
-        ax.axhline(M_R_hog,        color=C_HOG, ls=':', lw=1.2)   # M_R,hog — blue
-        ax.axhline(M_hog_el_at_qu, color=C_EL,  ls='--', lw=1.2)  # elastic ref — red
+        ax.axhline(bda.M_R,        color=C_HOG, ls=':', lw=1.2)
+        ax.axhline(M_R_hog,        color=C_HOG, ls=':', lw=1.2)
+        ax.axhline(M_hog_el_at_qu, color=C_EL,  ls='--', lw=1.2)
 
         self._sweep_vlines(ax)
         ax.set_ylim(bottom=0, top=M_hog_el_at_qu * 1.12)
@@ -785,11 +873,11 @@ class ContinuousBeamAnalysis:
         if kappa_idx is not None:
             idx = int(np.clip(kappa_idx, 0, n - 1))
             ax.axvline(kappa_abs[idx], color='gray', lw=1.2, ls='-', alpha=0.7, zorder=3)
-            ax.scatter([kappa_abs[idx]], [M_hog_abs[idx]], color='steelblue', s=50, zorder=5)
-            ax.scatter([kappa_abs[idx]], [M_sag_a[idx]],  color='steelblue', s=50, zorder=5)
+            ax.scatter([kappa_abs[idx]], [M_hog_abs[idx]], color=C_HOG, s=50, zorder=5)
+            ax.scatter([kappa_abs[idx]], [M_sag_a[idx]],  color=C_SAG, s=50, zorder=5)
             if not sym:
                 ax.scatter([kappa_abs[idx]], [M_sag_b[idx]],
-                           color='steelblue', s=50, marker='s', zorder=5)
+                           color=C_SAG, s=50, marker='s', zorder=5)
 
         # ── Left legend: curve line styles ────────────────────────────────────
         leg_left = ax.legend(
@@ -799,19 +887,21 @@ class ContinuousBeamAnalysis:
         )
         ax.add_artist(leg_left)   # keep it when we add the second legend
 
-        # ── Right text box: reference values ──────────────────────────────────
-        ref_lines = [
-            f'$M_R$ (sag) = {bda.M_R:.1f} kN·m',
-            f'$M_R$ (hog) = {M_R_hog:.1f} kN·m',
-            f'$|M_{{hog,el}}|(q_u)$ = {M_hog_el_at_qu:.1f} kN·m',
-            f'$\\delta_M = {delta_M:.3f}$',
-        ]
-        ax.text(
-            0.99, 0.02, '\n'.join(ref_lines),
-            transform=ax.transAxes,
-            ha='right', va='bottom', fontsize=9.5,
-            bbox=dict(boxstyle='round,pad=0.4', facecolor='white', edgecolor='#aaaaaa', alpha=0.9),
-        )
+        if show_annotations:
+            # ── Right text box: reference values ──────────────────────────────
+            ref_lines = [
+                f'$M_R$ (sag) = {bda.M_R:.1f} kN·m',
+                f'$M_R$ (hog) = {M_R_hog:.1f} kN·m',
+                f'$|M_{{hog,el}}|(q_u)$ = {M_hog_el_at_qu:.1f} kN·m',
+                f'$\\delta_M = {delta_M:.3f}$',
+            ]
+            ax.text(
+                0.99, 0.02, '\n'.join(ref_lines),
+                transform=ax.transAxes,
+                ha='right', va='bottom', fontsize=9.5,
+                bbox=dict(boxstyle='round,pad=0.4', facecolor='white',
+                          edgecolor='#aaaaaa', alpha=0.9),
+            )
 
         ax.set_xlabel(r'$|\kappa_{hog}|$  [‰/mm]', fontsize=11)
         ax.set_ylabel('Moment  [kN·m]', fontsize=11)
@@ -822,6 +912,11 @@ class ContinuousBeamAnalysis:
         self,
         ax: Optional[plt.Axes] = None,
         kappa_idx: int = -1,
+        *,
+        color: Optional[str] = None,
+        ls: str = '-',
+        label_suffix: str = '',
+        show_annotations: bool = True,
     ) -> plt.Axes:
         """Two-bay bending moment diagram at a given sweep step.
 
@@ -833,6 +928,15 @@ class ContinuousBeamAnalysis:
         ----------
         kappa_idx : int
             Sweep index (0 … n-1).  -1 means the last step (ultimate state).
+        color : str, optional
+            Override the nonlinear profile colour (elastic reference stays red).
+        ls : str
+            Linestyle for the nonlinear profile (default ``'-'``).
+        label_suffix : str
+            Unused in this plot (kept for API symmetry with the other methods).
+        show_annotations : bool
+            When *False*, suppress all text-box annotations (moment values).
+            Useful when overlaying multiple modes on the same axes.
         """
         if ax is None:
             _, ax = plt.subplots(figsize=(9, 3.5))
@@ -855,16 +959,18 @@ class ContinuousBeamAnalysis:
         x_a_,  M_a_el, x_b_,  M_b_el = cba_step.M_profiles(M_hog_el_Nmm)
 
         x_b_g = x_b + La   # global x for right span
+        C_NL  = color if color is not None else 'steelblue'
+        C_EL  = '#cc2222'   # elastic reference — never overridden
 
-        # ── Nonlinear: blue solid fill ────────────────────────────────────────
-        ax.plot(x_a,  M_a    / 1e6, '-', color='steelblue', lw=2.0)
-        ax.plot(x_b_g, M_b   / 1e6, '-', color='steelblue', lw=2.0)
-        ax.fill_between(x_a,  0, M_a   / 1e6, color='steelblue', alpha=0.13)
-        ax.fill_between(x_b_g, 0, M_b  / 1e6, color='steelblue', alpha=0.13)
+        # ── Nonlinear: coloured solid fill ────────────────────────────────────
+        ax.plot(x_a,   M_a  / 1e6, ls, color=C_NL, lw=2.0)
+        ax.plot(x_b_g, M_b  / 1e6, ls, color=C_NL, lw=2.0)
+        ax.fill_between(x_a,   0, M_a  / 1e6, color=C_NL, alpha=0.13)
+        ax.fill_between(x_b_g, 0, M_b  / 1e6, color=C_NL, alpha=0.13)
 
         # ── Elastic: red solid, no fill ───────────────────────────────────────
-        ax.plot(x_a,  M_a_el / 1e6, '-', color='#cc2222', lw=1.6, alpha=0.85)
-        ax.plot(x_b_g, M_b_el / 1e6, '-', color='#cc2222', lw=1.6, alpha=0.85)
+        ax.plot(x_a,   M_a_el / 1e6, '-', color=C_EL, lw=1.6, alpha=0.85)
+        ax.plot(x_b_g, M_b_el / 1e6, '-', color=C_EL, lw=1.6, alpha=0.85)
 
         ax.axhline(0, color='black', lw=0.8)
         for xs in (0, La, La + Lb):
@@ -876,18 +982,18 @@ class ContinuousBeamAnalysis:
         idx_sag_a_el = int(np.argmax(M_a_el))
         idx_sag_b_el = int(np.argmax(M_b_el))
 
-        ax.scatter([x_a[idx_sag_a]],    [M_a[idx_sag_a]    / 1e6],
-                   color='steelblue', s=55, zorder=6)
-        ax.scatter([x_b_g[idx_sag_b]],  [M_b[idx_sag_b]    / 1e6],
-                   color='steelblue', s=55, zorder=6)
-        ax.scatter([x_a[idx_sag_a_el]], [M_a_el[idx_sag_a_el] / 1e6],
-                   color='#cc2222', s=45, zorder=6, marker='D')
+        ax.scatter([x_a[idx_sag_a]],      [M_a[idx_sag_a]       / 1e6],
+                   color=C_NL, s=55, zorder=6)
+        ax.scatter([x_b_g[idx_sag_b]],    [M_b[idx_sag_b]       / 1e6],
+                   color=C_NL, s=55, zorder=6)
+        ax.scatter([x_a[idx_sag_a_el]],   [M_a_el[idx_sag_a_el] / 1e6],
+                   color=C_EL, s=45, zorder=6, marker='D')
         ax.scatter([x_b_g[idx_sag_b_el]], [M_b_el[idx_sag_b_el] / 1e6],
-                   color='#cc2222', s=45, zorder=6, marker='D')
+                   color=C_EL, s=45, zorder=6, marker='D')
 
         # ── Interior-support (hogging) markers ───────────────────────────────
-        ax.scatter([La], [M_hog_Nmm    / 1e6], color='steelblue', s=65, zorder=7)
-        ax.scatter([La], [M_hog_el_Nmm / 1e6], color='#cc2222',   s=50, zorder=7, marker='D')
+        ax.scatter([La], [M_hog_Nmm    / 1e6], color=C_NL, s=65, zorder=7)
+        ax.scatter([La], [M_hog_el_Nmm / 1e6], color=C_EL, s=50, zorder=7, marker='D')
 
         # ── Fixed y-limits from the ultimate state ────────────────────────────
         # Both NL and elastic values at the last sweep step define the fixed range
@@ -898,64 +1004,56 @@ class ContinuousBeamAnalysis:
 
         ax.invert_yaxis()   # sagging below axis (structural convention)
 
-        C_NL = 'steelblue'
-        C_EL = '#cc2222'
+        if show_annotations:
+            # ── Hogging box — NL and EL stacked at interior support ───────────
+            import matplotlib.transforms as _mtfm
+            _blended = _mtfm.blended_transform_factory(ax.transData, ax.transAxes)
+            ax.text(
+                La, 0.03,
+                f'$M_{{hog,nl}}$ = {M_hog_Nmm / 1e6:.1f} kN·m',
+                transform=_blended, ha='center', va='bottom', fontsize=8.5, color=C_NL,
+                bbox=dict(boxstyle='round,pad=0.3', facecolor='white',
+                          edgecolor=C_NL, alpha=0.90),
+            )
+            ax.text(
+                La, 0.17,
+                f'$M_{{hog,el}}$  = {M_hog_el_Nmm / 1e6:.1f} kN·m',
+                transform=_blended, ha='center', va='bottom', fontsize=8.5, color=C_EL,
+                bbox=dict(boxstyle='round,pad=0.3', facecolor='white',
+                          edgecolor=C_EL, alpha=0.90),
+            )
 
-        # ── Hogging box — split into NL (blue) and EL (red), stacked at interior support
-        # Placed in the sagging zone (axes y≈0) which is free space at x=La.
-        import matplotlib.transforms as _mtfm
-        _blended = _mtfm.blended_transform_factory(ax.transData, ax.transAxes)
-        ax.text(
-            La, 0.03,
-            f'$M_{{hog,nl}}$ = {M_hog_Nmm / 1e6:.1f} kN·m',
-            transform=_blended, ha='center', va='bottom', fontsize=8.5, color=C_NL,
-            bbox=dict(boxstyle='round,pad=0.3', facecolor='white',
-                      edgecolor=C_NL, alpha=0.90),
-        )
-        ax.text(
-            La, 0.17,
-            f'$M_{{hog,el}}$  = {M_hog_el_Nmm / 1e6:.1f} kN·m',
-            transform=_blended, ha='center', va='bottom', fontsize=8.5, color=C_EL,
-            bbox=dict(boxstyle='round,pad=0.3', facecolor='white',
-                      edgecolor=C_EL, alpha=0.90),
-        )
-
-        # ── Corner sagging boxes — NL (blue) and EL (red) stacked in the upper corners
-        # (hogging zone corners at x=0 and x=La+Lb are free: moment is 0 at outer supports)
-        sym = abs(La - Lb) < 1.0
-        # Left span — NL
-        ax.text(
-            0.01, 0.97,
-            f'Left span\n$M_{{sag,nl}}$ = {M_a[idx_sag_a] / 1e6:.1f} kN·m',
-            transform=ax.transAxes, ha='left', va='top', fontsize=8.5, color=C_NL,
-            bbox=dict(boxstyle='round,pad=0.3', facecolor='white',
-                      edgecolor=C_NL, alpha=0.88),
-        )
-        # Left span — EL
-        ax.text(
-            0.01, 0.80,
-            f'$M_{{sag,el}}$  = {M_a_el[idx_sag_a_el] / 1e6:.1f} kN·m',
-            transform=ax.transAxes, ha='left', va='top', fontsize=8.5, color=C_EL,
-            bbox=dict(boxstyle='round,pad=0.3', facecolor='white',
-                      edgecolor=C_EL, alpha=0.88),
-        )
-        # Right span — NL
-        ax.text(
-            0.99, 0.97,
-            ('Right span' if not sym else 'Right = Left') + '\n'
-            f'$M_{{sag,nl}}$ = {M_b[idx_sag_b] / 1e6:.1f} kN·m',
-            transform=ax.transAxes, ha='right', va='top', fontsize=8.5, color=C_NL,
-            bbox=dict(boxstyle='round,pad=0.3', facecolor='white',
-                      edgecolor=C_NL, alpha=0.88),
-        )
-        # Right span — EL
-        ax.text(
-            0.99, 0.80,
-            f'$M_{{sag,el}}$  = {M_b_el[idx_sag_b_el] / 1e6:.1f} kN·m',
-            transform=ax.transAxes, ha='right', va='top', fontsize=8.5, color=C_EL,
-            bbox=dict(boxstyle='round,pad=0.3', facecolor='white',
-                      edgecolor=C_EL, alpha=0.88),
-        )
+            # ── Corner sagging boxes ──────────────────────────────────────────
+            sym = abs(La - Lb) < 1.0
+            ax.text(
+                0.01, 0.97,
+                f'Left span\n$M_{{sag,nl}}$ = {M_a[idx_sag_a] / 1e6:.1f} kN·m',
+                transform=ax.transAxes, ha='left', va='top', fontsize=8.5, color=C_NL,
+                bbox=dict(boxstyle='round,pad=0.3', facecolor='white',
+                          edgecolor=C_NL, alpha=0.88),
+            )
+            ax.text(
+                0.01, 0.80,
+                f'$M_{{sag,el}}$  = {M_a_el[idx_sag_a_el] / 1e6:.1f} kN·m',
+                transform=ax.transAxes, ha='left', va='top', fontsize=8.5, color=C_EL,
+                bbox=dict(boxstyle='round,pad=0.3', facecolor='white',
+                          edgecolor=C_EL, alpha=0.88),
+            )
+            ax.text(
+                0.99, 0.97,
+                ('Right span' if not sym else 'Right = Left') + '\n'
+                f'$M_{{sag,nl}}$ = {M_b[idx_sag_b] / 1e6:.1f} kN·m',
+                transform=ax.transAxes, ha='right', va='top', fontsize=8.5, color=C_NL,
+                bbox=dict(boxstyle='round,pad=0.3', facecolor='white',
+                          edgecolor=C_NL, alpha=0.88),
+            )
+            ax.text(
+                0.99, 0.80,
+                f'$M_{{sag,el}}$  = {M_b_el[idx_sag_b_el] / 1e6:.1f} kN·m',
+                transform=ax.transAxes, ha='right', va='top', fontsize=8.5, color=C_EL,
+                bbox=dict(boxstyle='round,pad=0.3', facecolor='white',
+                          edgecolor=C_EL, alpha=0.88),
+            )
 
         ax.set_xlabel('$x$  [mm]', fontsize=11)
         ax.set_ylabel(r'$M$  [kN·m]', fontsize=11)

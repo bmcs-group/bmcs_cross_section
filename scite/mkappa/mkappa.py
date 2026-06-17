@@ -79,9 +79,9 @@ class MKappaAnalysis(BMCSModel):
         'both',
         label="Solve mode",
         description=(
-            "'positive' = sagging branch only (faster for simply-supported beams); "
-            "'negative' = hogging branch only (faster for parametric x/d studies); "
-            "'both' = full sagging + hogging"
+            "'positive' = positive-κ branch only (tension at bottom); "
+            "'negative' = negative-κ branch only (tension at top); "
+            "'both' = full positive + negative"
         ),
     )
 
@@ -94,17 +94,33 @@ class MKappaAnalysis(BMCSModel):
         description="Axial force tolerance for equilibrium",
     )
 
-    # Solution arrays (computed) — positive κ (sagging) branch
+    non_descending: bool = ui_field(
+        True,
+        label="Non-descending M-κ",
+        description=(
+            "Apply running maximum/minimum to M_values after solve(), "
+            "eliminating the post-cracking dip. Equivalent to ACK mean-stress "
+            "tension stiffening: M never drops below the cracking moment."
+        ),
+    )
+
+    # Solution arrays (computed) — positive-κ branch (tension at bottom)
     kappa_values: Optional[npt.NDArray[np.float64]] = None
     eps_bot_values: Optional[npt.NDArray[np.float64]] = None
     M_values: Optional[npt.NDArray[np.float64]] = None
     N_values: Optional[npt.NDArray[np.float64]] = None
 
-    # Negative-κ solution arrays (hogging branch, computed in solve())
+    # Negative-κ solution arrays (tension at top, computed in solve())
     kappa_neg_values: Optional[npt.NDArray[np.float64]] = None
     eps_bot_neg_values: Optional[npt.NDArray[np.float64]] = None
     M_neg_values: Optional[npt.NDArray[np.float64]] = None
     N_neg_values: Optional[npt.NDArray[np.float64]] = None
+
+    # Cracking curvatures and moments (stored after solve(), computed analytically)
+    kappa_cr_pos: Optional[float] = None
+    kappa_cr_neg: Optional[float] = None
+    M_cr_pos: Optional[float] = None   # cracking moment, positive branch [kN·m]
+    M_cr_neg: Optional[float] = None   # cracking moment, negative branch [kN·m] (negative sign)
 
     def get_kappa_range(self) -> Tuple[float, float]:
         """
@@ -144,13 +160,13 @@ class MKappaAnalysis(BMCSModel):
 
     def get_kappa_range_neg(self) -> Tuple[float, float]:
         """
-        Determine curvature range for the hogging (negative κ) branch.
+        Determine curvature range for the negative-κ branch (tension at top).
 
-        For hogging the tensile fibre is at the *top*, so the kappa limit is
+        For negative κ the tensile fibre is at the *top*, so the kappa limit is
         governed by the top reinforcement layer's strain limit (eps_ud_top)
         combined with the concrete compressive limit at the bottom fibre.
 
-            |κ_max_hog| = (eps_cu + eps_ud_top) / h
+            |κ_max_neg| = (eps_cu + eps_ud_top) / h
 
         Returns:
             (kappa_min, kappa_max): Magnitudes [1/mm], both positive.
@@ -255,6 +271,101 @@ class MKappaAnalysis(BMCSModel):
             F_c, F_s, N_total, M_total = profile.get_force_resultants()
             return 0.0, float(N_total / 1000.0), float(M_total / 1e6), False
 
+    # ── Cracking curvature helpers ────────────────────────────────────────────
+
+    def _modular_ratio(self) -> float:
+        """Modular ratio n = E_s / E_c."""
+        E_c = self.cs.concrete.E_ct_computed
+        E_s = 200_000.0
+        if self.cs.reinforcement.layers:
+            mat = self.cs.reinforcement.layers[0].material
+            if hasattr(mat, 'E_s'):
+                E_s = float(mat.E_s)
+        return E_s / E_c
+
+    def _transformed_section_centroid(self) -> float:
+        """Neutral-axis position y_c from bottom [mm] of the uncracked transformed section."""
+        n = self._modular_ratio()
+        A_c = self.cs.shape.area
+        S_c = self.cs.shape.first_moment_of_area_bottom
+        A_tr = sum((n - 1) * lay.A_s for lay in self.cs.reinforcement.layers)
+        S_tr = sum((n - 1) * lay.A_s * lay.z for lay in self.cs.reinforcement.layers)
+        return (S_c + S_tr) / (A_c + A_tr)
+
+    def _transformed_section_I(self, y_c: float) -> float:
+        """Second moment of area I_g [mm⁴] of the transformed section about y_c."""
+        n = self._modular_ratio()
+        A_c = self.cs.shape.area
+        S_c = self.cs.shape.first_moment_of_area_bottom
+        I_0 = self.cs.shape.second_moment_of_area_bottom
+        # I about y_c via expansion: ∫b(z)(z-y_c)² dz = I_0 - 2·y_c·S_c + y_c²·A_c
+        I_c_yc = I_0 - 2.0 * y_c * S_c + y_c ** 2 * A_c
+        I_tr = sum((n - 1) * lay.A_s * (y_c - lay.z) ** 2
+                   for lay in self.cs.reinforcement.layers)
+        return I_c_yc + I_tr
+
+    def _kappa_cr(self, branch: str) -> Optional[float]:
+        """Cracking curvature magnitude [1/mm] for 'positive' (tension at bottom) or 'negative' (tension at top).
+
+        Returns None if the concrete model does not expose f_ctm / E_ct_computed.
+        Returns 0.0 if N_Ed is so large that the section is already pre-cracked.
+        """
+        f_ctm = getattr(self.cs.concrete, 'f_ctm', None)
+        E_c = getattr(self.cs.concrete, 'E_ct_computed', None)
+        if f_ctm is None or E_c is None:
+            return None
+
+        A_g = self.cs.shape.area
+        sig_N = self.N_Ed * 1000.0 / A_g   # kN → N → MPa
+        f_ctm_eff = f_ctm - sig_N           # tension N_Ed reduces cracking resistance
+        if f_ctm_eff <= 0.0:
+            return 0.0                      # section pre-cracked under axial tension
+
+        eps_cr_eff = f_ctm_eff / E_c
+        y_c = self._transformed_section_centroid()
+
+        if branch == 'positive':
+            return eps_cr_eff / y_c                     # positive-κ: bottom fibre in tension
+        else:
+            return eps_cr_eff / (self.cs.h_total - y_c) # negative-κ: top fibre in tension
+
+    def _M_cr_analytical(self, kappa_cr: float) -> float:
+        """Cracking moment [kN·m] from elastic uncracked section: M_cr = E_c · I_g · κ_cr.
+
+        This is model-agnostic: it uses the uncracked transformed section stiffness
+        regardless of whether the concrete model includes a tensile branch.
+        Compression-only models (EC2ParabolaRectangle) return near-zero M from the
+        solver at κ_cr — the analytical formula is the correct value.
+        """
+        E_c = self.cs.concrete.E_ct_computed
+        y_c = self._transformed_section_centroid()
+        I_g = self._transformed_section_I(y_c)
+        return E_c * I_g * kappa_cr / 1e6   # N/mm² · mm⁴ · 1/mm → N·mm → /1e6 → kN·m
+
+    def _build_kappa_array(self, branch: str) -> np.ndarray:
+        """Curvature sample points for one branch, with κ_cr pinned explicitly.
+
+        When κ_cr is available:
+          Returns n_kappa + 1 points: [κ_cr, …, κ_max].
+          post[0] = κ_cr is injected analytically by solve(); the caller skips it
+          (post[1:]) so the solver loop covers exactly n_kappa post-cracking steps.
+
+        Falls back to linspace(κ_min, κ_max, n_kappa) if κ_cr is unavailable.
+        """
+        if branch == 'positive':
+            kappa_min, kappa_max = self.get_kappa_range()
+        else:
+            kappa_min, kappa_max = self.get_kappa_range_neg()
+
+        kappa_cr = self._kappa_cr(branch)
+
+        if kappa_cr is None or kappa_cr <= 0.0 or kappa_cr >= kappa_max:
+            return np.linspace(kappa_min, kappa_max, self.n_kappa)
+
+        # n_kappa+1 points so caller can skip first (= kappa_cr, injected analytically)
+        # and still iterate over exactly n_kappa post-cracking solver steps
+        return np.linspace(kappa_cr, kappa_max, self.n_kappa + 1)
+
     def solve(self) -> None:
         """
         Compute the complete M-κ relationship under constant axial force N_Ed.
@@ -265,20 +376,36 @@ class MKappaAnalysis(BMCSModel):
         failure_threshold = 3
         tolerance_multiplier = 100.0
 
-        # ── Positive-κ sweep (sagging branch) ────────────────────────────────
+        # ── Positive-κ sweep (tension at bottom) ─────────────────────────────
         if self.solve_mode == 'negative':
             self.kappa_values = np.array([])
             self.eps_bot_values = np.array([])
             self.M_values = np.array([])
             self.N_values = np.array([])
         else:
-            kappa_min, kappa_max = self.get_kappa_range()
-            kappa_array = np.linspace(kappa_min, kappa_max, self.n_kappa)
+            kappa_cr_pos = self._kappa_cr('positive')
+            self.kappa_cr_pos = kappa_cr_pos if (kappa_cr_pos is not None and kappa_cr_pos > 0) else None
+            self.M_cr_pos = (self._M_cr_analytical(kappa_cr_pos)
+                             if self.kappa_cr_pos is not None else None)
+            kappa_array = self._build_kappa_array('positive')
 
-            eps_bot_list: list = []
-            M_list: list = []
-            N_list: list = []
-            kappa_list: list = []
+            # Inject origin (0, 0) analytically (solver is degenerate at κ=0)
+            kappa_list: list = [0.0]
+            eps_bot_list: list = [0.0]
+            M_list: list = [0.0]
+            N_list: list = [0.0]
+
+            # Inject cracking point (κ_cr, M_cr) analytically — model-agnostic.
+            # EC2ParabolaRectangle has no tensile concrete, so the solver would return
+            # M ≈ 0 at κ_cr.  The analytical M_cr = E_c·I_g·κ_cr is always correct.
+            if self.kappa_cr_pos is not None and self.M_cr_pos is not None:
+                eps_cr = getattr(self.cs.concrete, 'eps_cr_computed',
+                                 self.kappa_cr_pos * self._transformed_section_centroid())
+                kappa_list.append(self.kappa_cr_pos)
+                eps_bot_list.append(float(eps_cr))   # bottom fibre at cracking = ε_cr
+                M_list.append(self.M_cr_pos)
+                N_list.append(0.0)
+                kappa_array = kappa_array[1:]        # kappa_cr already injected; skip it
 
             n_failed = 0
             M_max_so_far = 0.0
@@ -289,7 +416,7 @@ class MKappaAnalysis(BMCSModel):
 
                 if abs(N) > self.N_tol * tolerance_multiplier:
                     n_failed += 1
-                    if n_failed >= failure_threshold:
+                    if n_failed >= failure_threshold and M_peak_reached:
                         print(
                             f"Stopping at κ = {kappa*1000:.4f} ‰/mm (equilibrium lost, section failed)"
                         )
@@ -315,8 +442,10 @@ class MKappaAnalysis(BMCSModel):
             self.eps_bot_values = np.array(eps_bot_list)
             self.M_values = np.array(M_list)
             self.N_values = np.array(N_list)
+            if self.non_descending:
+                self.M_values = np.maximum.accumulate(self.M_values)
 
-        # ── Negative-κ sweep (hogging branch) ────────────────────────────────
+        # ── Negative-κ sweep (tension at top) ────────────────────────────────
         if self.solve_mode == 'positive':
             self.kappa_neg_values = np.array([])
             self.eps_bot_neg_values = np.array([])
@@ -324,16 +453,33 @@ class MKappaAnalysis(BMCSModel):
             self.N_neg_values = np.array([])
             return
 
-        kappa_min_hog, kappa_max_hog = self.get_kappa_range_neg()
-        kappa_neg_array = np.linspace(-kappa_min_hog, -kappa_max_hog, self.n_kappa)
+        kappa_cr_neg = self._kappa_cr('negative')
+        self.kappa_cr_neg = kappa_cr_neg if (kappa_cr_neg is not None and kappa_cr_neg > 0) else None
+        self.M_cr_neg = (-self._M_cr_analytical(kappa_cr_neg)
+                         if self.kappa_cr_neg is not None else None)
+        kappa_neg_array = -self._build_kappa_array('negative')  # signed negative
 
-        eps_bot_neg_list: list = []
-        M_neg_list: list = []
-        N_neg_list: list = []
-        kappa_neg_list: list = []
+        # Inject origin (0, 0) analytically
+        kappa_neg_list: list = [0.0]
+        eps_bot_neg_list: list = [0.0]
+        M_neg_list: list = [0.0]
+        N_neg_list: list = [0.0]
+
+        # Inject cracking point (−κ_cr, M_cr_neg) analytically
+        if self.kappa_cr_neg is not None and self.M_cr_neg is not None:
+            eps_cr = getattr(self.cs.concrete, 'eps_cr_computed',
+                             self.kappa_cr_neg * (self.cs.h_total
+                                                  - self._transformed_section_centroid()))
+            # For negative κ: top fibre cracks → ε_bot = ε_cr − κ_cr_neg·h (negative, compression)
+            eps_bot_cr_neg = float(eps_cr) - self.kappa_cr_neg * self.cs.h_total
+            kappa_neg_list.append(-self.kappa_cr_neg)
+            eps_bot_neg_list.append(eps_bot_cr_neg)
+            M_neg_list.append(self.M_cr_neg)
+            N_neg_list.append(0.0)
+            kappa_neg_array = kappa_neg_array[1:]   # kappa_cr already injected; skip it
 
         n_failed_neg = 0
-        M_min_so_far = 0.0   # tracks most-negative (hogging) peak moment
+        M_min_so_far = 0.0   # tracks most-negative peak moment
         M_peak_neg_reached = False
 
         for kappa in kappa_neg_array:
@@ -341,9 +487,9 @@ class MKappaAnalysis(BMCSModel):
 
             if abs(N) > self.N_tol * tolerance_multiplier:
                 n_failed_neg += 1
-                if n_failed_neg >= failure_threshold:
+                if n_failed_neg >= failure_threshold and M_peak_neg_reached:
                     print(
-                        f"Stopping hogging sweep at κ = {kappa*1000:.4f} ‰/mm "
+                        f"Stopping negative-κ sweep at κ = {kappa*1000:.4f} ‰/mm "
                         f"(equilibrium lost, section failed)"
                     )
                     break
@@ -356,18 +502,16 @@ class MKappaAnalysis(BMCSModel):
             N_neg_list.append(N)
             M_neg_list.append(M)
 
-            # Track hogging peak (most-negative M)
+            # Track most-negative peak
             if M < M_min_so_far:
                 M_min_so_far = M
                 M_peak_neg_reached = True
 
-            # Stop if moment has recovered past 20 % of hogging peak
-            # (M_min_so_far < 0, so 0.2*M_min_so_far is also negative but
-            #  closer to zero; M > 0.2*M_min_so_far means |M| < 20 % of peak)
+            # Stop if moment has recovered past 20 % of negative peak
             if M_peak_neg_reached and M > 0.2 * M_min_so_far:
                 print(
-                    f"Stopping hogging sweep at κ = {kappa*1000:.4f} ‰/mm "
-                    f"(M recovered past 20 % of hogging peak)"
+                    f"Stopping negative-κ sweep at κ = {kappa*1000:.4f} ‰/mm "
+                    f"(M recovered past 20 % of negative-κ peak)"
                 )
                 break
 
@@ -375,10 +519,12 @@ class MKappaAnalysis(BMCSModel):
         self.eps_bot_neg_values = np.array(eps_bot_neg_list)
         self.M_neg_values = np.array(M_neg_list)
         self.N_neg_values = np.array(N_neg_list)
+        if self.non_descending:
+            self.M_neg_values = np.minimum.accumulate(self.M_neg_values)
 
     @property
     def xd_pos(self) -> float:
-        """x/d at the peak sagging (positive) moment — from actual M-κ strain state."""
+        """x/d at the peak positive-κ moment — from actual M-κ strain state."""
         if self.M_values is None or len(self.M_values) == 0:
             raise RuntimeError("MKappaAnalysis not solved yet — call .solve() first.")
         idx = int(np.argmax(self.M_values))
@@ -389,17 +535,162 @@ class MKappaAnalysis(BMCSModel):
 
     @property
     def xd_neg(self) -> float:
-        """x/d at the peak hogging (negative) moment — from actual M-κ strain state.
+        """x/d at the peak negative-κ moment — from actual M-κ strain state.
 
         Requires solve_mode='both'.
         """
         if self.kappa_neg_values is None or len(self.kappa_neg_values) == 0:
-            raise ValueError("Hogging branch not solved — use solve_mode='both'.")
+            raise ValueError("Negative-κ branch not solved — use solve_mode='both'.")
         idx = int(np.argmin(self.M_neg_values))
         p = StressStrainProfile(self.cs, kappa=float(self.kappa_neg_values[idx]),
                                 eps_bottom=float(self.eps_bot_neg_values[idx]))
         _, _, xd = p.xd
         return xd
+
+    # ── M-κ interpolation helpers ─────────────────────────────────────────────
+
+    @staticmethod
+    def _ascending_envelope(
+        kappa_abs: np.ndarray, M_abs: np.ndarray
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        """Keep only points where |M| is strictly ascending.
+
+        Removes the cracking-dip instability and post-peak softening so the
+        resulting table is suitable for monotone np.interp in both directions
+        (M→κ inversion and κ→M forward map), regardless of n_kappa.
+        """
+        mask = np.zeros(len(M_abs), dtype=bool)
+        M_max = -np.inf
+        for i, m in enumerate(M_abs):
+            if m > M_max:
+                M_max = m
+                mask[i] = True
+        return kappa_abs[mask], M_abs[mask]
+
+    def kappa_from_M(self, M_arr: np.ndarray) -> np.ndarray:
+        """Invert M-κ: M [N·mm] → κ [1/mm], signed (+ positive branch, – negative branch).
+
+        Uses the strictly ascending envelope of each branch so the result is
+        unique and n_kappa-independent (the cracking dip is bridged).
+        Moments are clipped to the respective branch capacity.
+
+        Respects solve_mode: if only one branch was solved, the other falls
+        back to a symmetric mirror or returns zero.
+        """
+        M_arr = np.asarray(M_arr, dtype=float)
+        M_abs = np.abs(M_arr)
+
+        # ── Positive-κ branch ────────────────────────────────────────────────
+        has_pos = self.kappa_values is not None and len(self.kappa_values) > 0
+        if has_pos:
+            k_env, M_env = self._ascending_envelope(
+                self.kappa_values, self.M_values * 1e6
+            )
+            k_env = np.concatenate([[0.0], k_env])
+            M_env = np.concatenate([[0.0], M_env])
+            kappa_sag = np.interp(np.clip(M_abs, 0.0, M_env[-1]), M_env, k_env)
+        else:
+            kappa_sag = np.zeros_like(M_abs)
+
+        # ── Negative-κ branch ────────────────────────────────────────────────
+        has_neg = self.kappa_neg_values is not None and len(self.kappa_neg_values) > 0
+        if has_neg:
+            k_env, M_env = self._ascending_envelope(
+                np.abs(self.kappa_neg_values), np.abs(self.M_neg_values) * 1e6
+            )
+            k_env = np.concatenate([[0.0], k_env])
+            M_env = np.concatenate([[0.0], M_env])
+            kappa_neg = np.interp(np.clip(M_abs, 0.0, M_env[-1]), M_env, k_env)
+        elif has_pos:
+            kappa_neg = kappa_sag   # symmetric fallback
+        else:
+            kappa_neg = np.zeros_like(M_abs)
+
+        return np.where(M_arr >= 0.0, kappa_sag, -kappa_neg)
+
+    def M_from_kappa(self, kappa_arr: np.ndarray) -> np.ndarray:
+        """Forward map κ [1/mm] → M [N·mm], signed (+ positive-κ branch, – negative-κ branch).
+
+        Uses the ascending-κ segment up to the peak for each branch, with the
+        origin prepended.  This is the centralised version of ``_forward_map``
+        in ContinuousBeamAnalysis.
+        """
+        kappa_arr = np.asarray(kappa_arr, dtype=float)
+        kappa_abs = np.abs(kappa_arr)
+
+        # Positive-κ branch
+        has_pos = self.kappa_values is not None and len(self.kappa_values) > 0
+        if has_pos:
+            idx_pk = int(np.argmax(self.M_values))
+            k_pos = np.concatenate([[0.0], self.kappa_values[:idx_pk + 1]])
+            M_pos = np.concatenate([[0.0], self.M_values[:idx_pk + 1] * 1e6])
+            M_pos_interp = np.interp(np.clip(kappa_abs, 0.0, k_pos[-1]), k_pos, M_pos)
+        else:
+            M_pos_interp = np.zeros_like(kappa_abs)
+
+        # Negative-κ branch
+        has_neg = self.kappa_neg_values is not None and len(self.kappa_neg_values) > 0
+        if has_neg:
+            idx_pk = int(np.argmin(self.M_neg_values))
+            k_neg = np.concatenate([[0.0], np.abs(self.kappa_neg_values[:idx_pk + 1])])
+            M_neg = np.concatenate([[0.0], np.abs(self.M_neg_values[:idx_pk + 1]) * 1e6])
+            M_neg_interp = np.interp(np.clip(kappa_abs, 0.0, k_neg[-1]), k_neg, M_neg)
+        elif has_pos:
+            M_neg_interp = M_pos_interp   # symmetric fallback
+        else:
+            M_neg_interp = np.zeros_like(kappa_abs)
+
+        return np.where(kappa_arr >= 0.0, M_pos_interp, -M_neg_interp)
+
+    def plot_kappa_from_M(
+        self,
+        ax: Optional[plt.Axes] = None,
+        color: str = '#1f77b4',
+        linewidth: float = 2.0,
+        label_suffix: str = '',
+    ) -> plt.Axes:
+        """Plot the inverted κ(M) curve using the strictly ascending envelope.
+
+        Useful for verifying that the inversion is smooth and monotone after
+        removing the cracking dip.  Positive-κ (M > 0, κ > 0) is solid; negative-κ
+        (M < 0, κ < 0) is dashed.  Both branches share one colour so the call
+        can be looped with MKappaModes.iter_modes().
+        """
+        if ax is None:
+            _, ax = plt.subplots(figsize=(8, 5))
+
+        has_pos = self.kappa_values is not None and len(self.kappa_values) > 0
+        has_neg = self.kappa_neg_values is not None and len(self.kappa_neg_values) > 0
+
+        if has_pos:
+            k_env, M_env = self._ascending_envelope(
+                self.kappa_values * 1e3,    # ‰/mm
+                self.M_values,              # kN·m
+            )
+            k_env = np.concatenate([[0.0], k_env])
+            M_env = np.concatenate([[0.0], M_env])
+            ax.plot(M_env, k_env, color=color, lw=linewidth,
+                    label=f'pos{label_suffix}')
+
+        if has_neg:
+            k_env, M_env = self._ascending_envelope(
+                np.abs(self.kappa_neg_values) * 1e3,
+                np.abs(self.M_neg_values),
+            )
+            k_env = np.concatenate([[0.0], k_env])
+            M_env = np.concatenate([[0.0], M_env])
+            ax.plot(-M_env, -k_env, color=color, lw=linewidth, ls='--',
+                    label=f'neg{label_suffix}')
+
+        ax.axhline(0, color='k', lw=0.5)
+        ax.axvline(0, color='k', lw=0.5)
+        ax.set_xlabel('Moment $M$  [kN·m]', fontsize=11)
+        ax.set_ylabel('Curvature $\\kappa$  [‰/mm]', fontsize=11)
+        ax.set_title('Inverted M-κ: κ(M) — ascending envelope',
+                     fontsize=12, fontweight='bold')
+        ax.grid(True, alpha=0.3, ls='--')
+        ax.legend()
+        return ax
 
     def get_failure_mode(self) -> dict:
         """
@@ -483,6 +774,7 @@ class MKappaAnalysis(BMCSModel):
         label: str = "M-κ",
         show_failure_marker: bool = False,
         show_full_range: bool = False,
+        show_cracking_marker: bool = False,
     ) -> plt.Axes:
         """
         Plot moment-curvature relationship.
@@ -498,10 +790,10 @@ class MKappaAnalysis(BMCSModel):
                 reinforcement rupture, or balanced).  Use
                 ``add_failure_mode_legend(ax)`` afterwards to add the three
                 marker legend entries to the axes.
-            show_full_range: If True, also plot the hogging (negative κ) branch
-                alongside the sagging (positive κ) branch.  The two branches
-                are drawn with the same color and linewidth; only the sagging
-                branch carries the legend label.
+            show_full_range: If True, also plot the negative-κ branch alongside
+                the positive-κ branch.  The two branches are drawn with the
+                same color and linewidth; only the positive-κ branch carries
+                the legend label.
 
         Returns:
             Matplotlib axes with plot
@@ -517,7 +809,7 @@ class MKappaAnalysis(BMCSModel):
 
         ax.plot(kappa_permille_mm, self.M_values, color=color, linewidth=linewidth, label=label)
 
-        # Hogging branch (negative κ, negative M)
+        # Negative-κ branch
         if show_full_range and self.kappa_neg_values is not None and len(self.kappa_neg_values) > 0:
             kappa_neg_mm = self.kappa_neg_values * 1000.0
             ax.plot(kappa_neg_mm, self.M_neg_values, color=color, linewidth=linewidth)
@@ -526,6 +818,19 @@ class MKappaAnalysis(BMCSModel):
             self._add_failure_marker(ax, color=color)
             if show_full_range and self.kappa_neg_values is not None and len(self.kappa_neg_values) > 0:
                 self._add_failure_marker_neg(ax, color=color)
+
+        if show_cracking_marker:
+            # Use analytically computed M_cr (= E_c·I_g·κ_cr), not solver interpolation.
+            # Solver gives near-zero M for compression-only models (EC2ParabolaRectangle)
+            # because they carry no tensile concrete — the elastic formula is always correct.
+            if self.kappa_cr_pos is not None and self.M_cr_pos is not None:
+                ax.axvline(self.kappa_cr_pos * 1e3, color=color, lw=0.8, ls=':', alpha=0.6)
+                ax.plot(self.kappa_cr_pos * 1e3, self.M_cr_pos, 'o', color=color,
+                        markersize=6, markerfacecolor='white', markeredgewidth=1.5, zorder=4)
+            if show_full_range and self.kappa_cr_neg is not None and self.M_cr_neg is not None:
+                ax.axvline(-self.kappa_cr_neg * 1e3, color=color, lw=0.8, ls=':', alpha=0.6)
+                ax.plot(-self.kappa_cr_neg * 1e3, self.M_cr_neg, 'o', color=color,
+                        markersize=6, markerfacecolor='white', markeredgewidth=1.5, zorder=4)
 
         ax.set_xlabel("Curvature [1/m]", fontsize=12)
         ax.set_ylabel("Moment M [kN·m]", fontsize=12)
@@ -569,9 +874,9 @@ class MKappaAnalysis(BMCSModel):
         ax: plt.Axes,
         color: str = "#1f77b4",
     ) -> None:
-        """Place a failure-mode marker at the peak of the hogging (negative-κ) branch.
+        """Place a failure-mode marker at the peak of the negative-κ branch.
 
-        For hogging the bottom fibre is in compression (concrete governs) and the
+        For negative κ the bottom fibre is in compression (concrete governs) and the
         top fibre is in tension (top reinforcement governs).  The utilisation
         ratios are therefore:
             η_c = |ε_bot| / ε_cu   (concrete at bottom compression fibre)
@@ -582,8 +887,8 @@ class MKappaAnalysis(BMCSModel):
 
         idx_pk    = int(np.argmin(self.M_neg_values))
         kappa_pk  = self.kappa_neg_values[idx_pk]       # negative [1/mm]
-        eps_bot_pk = self.eps_bot_neg_values[idx_pk]    # bottom (compression in hogging)
-        eps_top_pk = eps_bot_pk - kappa_pk * self.cs.h_total  # top (tension in hogging)
+        eps_bot_pk = self.eps_bot_neg_values[idx_pk]    # bottom (compression at negative κ)
+        eps_top_pk = eps_bot_pk - kappa_pk * self.cs.h_total  # top (tension at negative κ)
 
         eps_cu = abs(self.cs.concrete.eps_cu2_computed)
         if self.cs.reinforcement.layers:

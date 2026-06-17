@@ -119,12 +119,22 @@ class RectangularShape(BMCSModel):
     def W_top(self) -> float:
         """Section modulus at top fiber [mm³]"""
         return self.I_y / self.centroid_y
-    
+
     @property
     def W_bottom(self) -> float:
         """Section modulus at bottom fiber [mm³]"""
         return self.I_y / self.centroid_y
-    
+
+    @property
+    def first_moment_of_area_bottom(self) -> float:
+        """First moment of area about bottom reference [mm³]: ∫₀ʰ b·z·dz = b·h²/2"""
+        return self.b * self.h ** 2 / 2.0
+
+    @property
+    def second_moment_of_area_bottom(self) -> float:
+        """Second moment of area about bottom reference [mm⁴]: ∫₀ʰ b·z²·dz = b·h³/3"""
+        return self.b * self.h ** 3 / 3.0
+
     def get_y_coordinates(self, n: int = 100) -> npt.NDArray[np.float64]:
         """
         Get uniformly spaced discretization points.
@@ -307,12 +317,26 @@ class TShape(BMCSModel):
     def W_top(self) -> float:
         """Section modulus at top fiber [mm³]"""
         return self.I_y / self.centroid_y
-    
+
     @property
     def W_bottom(self) -> float:
         """Section modulus at bottom fiber [mm³]"""
         return self.I_y / (self.h_total - self.centroid_y)
-    
+
+    @property
+    def first_moment_of_area_bottom(self) -> float:
+        """First moment about bottom [mm³]: ∫₀ʰ b(z)·z·dz."""
+        h_t = self.h_total
+        return (self.b_w * self.h_w ** 2 / 2.0
+                + self.b_f / 2.0 * (h_t ** 2 - self.h_w ** 2))
+
+    @property
+    def second_moment_of_area_bottom(self) -> float:
+        """Second moment about bottom [mm⁴]: ∫₀ʰ b(z)·z²·dz."""
+        h_t = self.h_total
+        return (self.b_w * self.h_w ** 3 / 3.0
+                + self.b_f / 3.0 * (h_t ** 3 - self.h_w ** 3))
+
     def get_y_coordinates(self, n: int = 100) -> npt.NDArray[np.float64]:
         """
         Get discretization points with denser spacing at flange-web junction.

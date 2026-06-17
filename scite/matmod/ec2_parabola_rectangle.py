@@ -107,16 +107,46 @@ class EC2ParabolaRectangle(BMCSModel):
     # -------------------------------------------------------------------------
     # Derived properties (EC2 Table 3.1)
     # -------------------------------------------------------------------------
-    
+
     @cached_property
     def f_cm(self) -> float:
         """Mean compressive strength [MPa] (EC2: f_cm = f_ck + 8)"""
         return self.f_ck + 8.0
-    
+
     @cached_property
     def f_cd(self) -> float:
         """Design compressive strength [MPa]"""
         return self.alpha_cc * self.f_ck / self.gamma_c
+
+    @cached_property
+    def f_ctm(self) -> float:
+        """Mean axial tensile strength [MPa] (EC2 Table 3.1).
+
+        f_ctm = 0.30 · f_ck^(2/3)   for f_ck ≤ 50 MPa
+        f_ctm = 2.12 · ln(1 + f_cm/10)  for f_ck > 50 MPa
+        """
+        if self.f_ck <= 50:
+            return 0.3 * self.f_ck ** (2.0 / 3.0)
+        return 2.12 * np.log(1.0 + self.f_cm / 10.0)
+
+    @cached_property
+    def E_cm(self) -> float:
+        """Secant modulus of elasticity [MPa] (EC2: E_cm = 22000·(f_cm/10)^0.3)."""
+        return 22000.0 * (self.f_cm / 10.0) ** 0.3
+
+    @cached_property
+    def E_ct_computed(self) -> float:
+        """Concrete tensile (initial) modulus [MPa].
+
+        EC2 uses E_cm for both compression and tension initial modulus.
+        Exposed under this name for API compatibility with EC2Concrete.
+        """
+        return self.E_cm
+
+    @cached_property
+    def eps_cr_computed(self) -> float:
+        """Concrete cracking strain [-] (first crack in tension): f_ctm / E_cm."""
+        return self.f_ctm / self.E_ct_computed
     
     @cached_property
     def eps_c2_computed(self) -> float:

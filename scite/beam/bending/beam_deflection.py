@@ -173,46 +173,12 @@ class BeamDeflectionAnalysis(BMCSModel):
     # ── κ(x) from M-κ interpolation ──────────────────────────────────────────
 
     def get_kappa_x_from_M(self, M_x: np.ndarray) -> np.ndarray:
+        """Curvature profile κ(x) [1/mm] for a given moment array M_x [N·mm].
+
+        Delegates to ``MKappaAnalysis.kappa_from_M`` which uses the strictly
+        ascending envelope, eliminating the cracking-dip ambiguity.
         """
-        Curvature profile κ(x) [1/mm] for a given moment array M_x [N·mm].
-
-        Inverts the ascending branch of the M-κ curve.  Moments beyond M_R
-        are clipped.
-
-        For sagging moments (M_x ≥ 0) the positive M-κ branch is used.
-        For hogging moments (M_x < 0) the independently solved negative branch
-        is used when available (asymmetric sections), otherwise the sagging
-        branch is mirrored (symmetric-section approximation).
-        """
-        mk = self.mk
-
-        # ── Sagging branch (positive κ) ───────────────────────────────────────
-        idx_peak_sag = int(np.argmax(mk.M_values))
-        M_sag_ref     = mk.M_values[:idx_peak_sag + 1] * 1e6   # kN·m → N·mm
-        kappa_sag_ref = mk.kappa_values[:idx_peak_sag + 1]       # 1/mm
-        M_abs = np.abs(M_x)
-        kappa_sag = np.interp(
-            np.clip(M_abs, 0.0, float(np.max(M_sag_ref))),
-            M_sag_ref, kappa_sag_ref,
-        )
-
-        # ── Hogging branch (negative κ) ───────────────────────────────────────
-        if mk.kappa_neg_values is not None and len(mk.kappa_neg_values) > 0:
-            # Use the independently solved hogging branch (correct for
-            # asymmetric sections with different A_s_top / A_s_bot).
-            idx_peak_hog = int(np.argmin(mk.M_neg_values))
-            # Convert to positive absolute values; both arrays are ascending.
-            M_hog_ref     = np.abs(mk.M_neg_values[:idx_peak_hog + 1]) * 1e6
-            kappa_hog_ref = np.abs(mk.kappa_neg_values[:idx_peak_hog + 1])
-            kappa_hog = np.interp(
-                np.clip(M_abs, 0.0, float(np.max(M_hog_ref))),
-                M_hog_ref, kappa_hog_ref,
-            )
-        else:
-            # Symmetric approximation (fallback / backward compatibility)
-            kappa_hog = kappa_sag
-
-        return np.where(M_x >= 0.0, kappa_sag, -kappa_hog)
+        return self.mk.kappa_from_M(M_x)
 
     def get_kappa_x(self, F: float) -> np.ndarray:
         """
