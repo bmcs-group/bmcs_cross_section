@@ -612,6 +612,179 @@ class ContinuousBeamAnalysis:
         }
         return min(candidates, key=candidates.__getitem__)
 
+    def _theta_from_profiles(self, q_step: float, M_hog_Nmm: float,
+                             zone_half_width: float = None) -> float:
+        """Integral of |κ(x)| over the hogging zone for a given (q, M_hog) state.
+
+        If *zone_half_width* is given the integration is restricted to the zone
+        [L_a − zone_half_width, L_a + zone_half_width] around the interior support.
+        Pass 0.6 * h to reproduce the EC2 §5.6.3 plastic-hinge zone (1.2h total).
+        """
+        from dataclasses import replace as _replace
+        cba_step = _replace(self, q=q_step)
+        x_a, M_a, x_b, M_b = cba_step.M_profiles(M_hog_Nmm)
+        ka = self.span_left.get_kappa_x_from_M(M_a)
+        kb = self.span_right.get_kappa_x_from_M(M_b)
+        x_all = np.concatenate([x_a, x_b + self.span_left.L])
+        k_all = np.concatenate([ka, kb])
+        k_hog = np.clip(k_all, None, 0.0)
+        if zone_half_width is not None:
+            x_sup = float(self.span_left.L)
+            mask  = np.abs(x_all - x_sup) <= zone_half_width
+            if mask.sum() < 2:
+                return 0.0
+            return float(np.trapezoid(-k_hog[mask], x_all[mask]))
+        return float(np.trapezoid(-k_hog, x_all))
+
+    def theta_u_at_step(self, kappa_idx: int = -1) -> float:
+        """Total rotation [rad] at a given sweep step: ∫|κ(x)| dx over the hogging zone.
+
+        This is the full rotation from the simulation.  At the ultimate step
+        (kappa_idx=-1) it equals the rotation demand at the plastic hinge.
+        Use ``theta_pl_at_step`` for the inelastic (post-cracking) part only.
+
+        Parameters
+        ----------
+        kappa_idx : int
+            Sweep index (0 … n-1).  -1 means the last step (ultimate state).
+        """
+        s   = self.sweep
+        n   = len(s['kappa_hog'])
+        idx = int(np.clip(kappa_idx if kappa_idx >= 0 else n - 1, 0, n - 1))
+        return self._theta_from_profiles(float(s['q'][idx]),
+                                         float(s['M_nl_hog'][idx]) * 1e6)
+
+    @cached_property
+    def theta_el(self) -> float:
+        """Elastic rotation [rad]: ∫|κ(x)| dx over the hogging zone at onset of cracking.
+
+        The hogging section cracks at κ_hog = −κ_cr_neg (the first non-linear
+        kink in the M-κ curve).  Up to this load the beam is uncracked and the
+        curvature distribution is elastic.  θ_el therefore represents the
+        recoverable (elastic) share of the total rotation.
+
+        Returns 0.0 if the section does not crack (rare with low reinforcement).
+        """
+        kappa_cr = self.span_left.mk.kappa_cr_neg   # positive magnitude [1/mm]
+        if kappa_cr is None:
+            return 0.0
+        kappa_hog_cr = -kappa_cr                     # signed, ≤ 0
+        q_cr     = self.solve_q_for_kappa_hog(kappa_hog_cr)
+        M_hog_cr = self._forward_map(kappa_hog_cr)   # N·mm, signed ≤ 0
+        return self._theta_from_profiles(q_cr, M_hog_cr)
+
+    def theta_pl_at_step(self, kappa_idx: int = -1) -> float:
+        """Inelastic (post-cracking) rotation [rad] at a given sweep step.
+
+        Defined as the difference between the total rotation at the given step
+        and the elastic rotation at the onset of cracking:
+
+            θ_pl = θ_u(step) − θ_el
+
+        Parameters
+        ----------
+        kappa_idx : int
+            Sweep index (0 … n-1).  -1 means the last step (ultimate state).
+        """
+        return self.theta_u_at_step(kappa_idx) - self.theta_el
+
+    def theta_u_ec2_at_step(self, kappa_idx: int = -1) -> float:
+        """Total rotation [rad] over the EC2 1.2h hinge zone (±0.6h around support).
+
+        Parameters
+        ----------
+        kappa_idx : int
+            Sweep index (0 … n-1).  -1 means the last step (ultimate state).
+        """
+        h   = float(self.span_left.cs.h_total)
+        s   = self.sweep
+        n   = len(s['kappa_hog'])
+        idx = int(np.clip(kappa_idx if kappa_idx >= 0 else n - 1, 0, n - 1))
+        return self._theta_from_profiles(
+            float(s['q'][idx]),
+            float(s['M_nl_hog'][idx]) * 1e6,
+            zone_half_width=0.6 * h,
+        )
+
+    @cached_property
+    def theta_el_ec2(self) -> float:
+        """Elastic rotation [rad] over the EC2 1.2h zone at the onset of cracking.
+
+        Mirrors ``theta_el`` but restricts the integration to
+        [L_a − 0.6h, L_a + 0.6h] around the interior support.
+        Returns 0.0 if the hogging section does not crack.
+        """
+        kappa_cr = self.span_left.mk.kappa_cr_neg
+        if kappa_cr is None:
+            return 0.0
+        kappa_hog_cr = -kappa_cr
+        q_cr     = self.solve_q_for_kappa_hog(kappa_hog_cr)
+        M_hog_cr = self._forward_map(kappa_hog_cr)
+        h = float(self.span_left.cs.h_total)
+        return self._theta_from_profiles(q_cr, M_hog_cr, zone_half_width=0.6 * h)
+
+    def theta_pl_ec2_at_step(self, kappa_idx: int = -1) -> float:
+        """Inelastic rotation [rad] over the EC2 1.2h zone: θ_u_ec2 − θ_el_ec2.
+
+        Parameters
+        ----------
+        kappa_idx : int
+            Sweep index (0 … n-1).  -1 means the last step (ultimate state).
+        """
+        return self.theta_u_ec2_at_step(kappa_idx) - self.theta_el_ec2
+
+    def midspan_deflection_at_step(self, kappa_idx: int = -1) -> float:
+        """Maximum sagging deflection [mm] in the left span at a given sweep step.
+
+        Parameters
+        ----------
+        kappa_idx : int
+            Sweep index (0 … n-1).  -1 means the last step (ultimate state).
+        """
+        s   = self.sweep
+        n   = len(s['kappa_hog'])
+        idx = int(np.clip(kappa_idx if kappa_idx >= 0 else n - 1, 0, n - 1))
+        from dataclasses import replace as _replace
+        cba_step = _replace(self, q=float(s['q'][idx]))
+        _, w_a, _, _ = cba_step.w_profiles(float(s['M_nl_hog'][idx]) * 1e6)
+        return float(np.max(w_a))
+
+    def lambda_sl_at_step(self, d: float, kappa_idx: int = -1) -> float:
+        """Geometric shear slenderness λ = a_s/d at the interior support (EC2 §5.6.3).
+
+        Uses the primary EC2 definition: a_s is the distance from the inflection
+        point to the maximum-moment section (interior support), divided by the
+        effective depth d.  This is more accurate than the simplified EC2 Eq. 5.12N
+        λ = M/(V·d) for beams under UDL, which underestimates the geometric value.
+
+        Parameters
+        ----------
+        d : float
+            Effective depth [mm] at the hogging section.
+        kappa_idx : int
+            Sweep index (0 … n-1).  -1 means the last step (ultimate state).
+
+        Returns
+        -------
+        float
+            Shear slenderness λ (dimensionless).
+        """
+        s   = self.sweep
+        n   = len(s['kappa_hog'])
+        idx = int(np.clip(kappa_idx if kappa_idx >= 0 else n - 1, 0, n - 1))
+        from dataclasses import replace as _replace
+        cba_step  = _replace(self, q=float(s['q'][idx]))
+        x_a, M_a, _, _ = cba_step.M_profiles(float(s['M_nl_hog'][idx]) * 1e6)
+        # Find the last sign change + → − (inflection point, sagging → hogging)
+        sign_ch = np.where(np.diff(np.sign(M_a)) < 0)[0]
+        if len(sign_ch) == 0:
+            return 0.0
+        ii = int(sign_ch[-1])
+        # Linear interpolation for precise inflection location
+        x_inf = x_a[ii] + (-M_a[ii]) / (M_a[ii + 1] - M_a[ii]) * (x_a[ii + 1] - x_a[ii])
+        a_s = float(self.span_left.L) - float(x_inf)  # [mm]
+        return a_s / float(d)
+
     @cached_property
     def xd_hog_u(self) -> float:
         """x/d at the hogging (interior support) section at its M-κ peak.
@@ -1057,6 +1230,99 @@ class ContinuousBeamAnalysis:
 
         ax.set_xlabel('$x$  [mm]', fontsize=11)
         ax.set_ylabel(r'$M$  [kN·m]', fontsize=11)
+        ax.grid(True, alpha=0.3, ls='--')
+        return ax
+
+    def plot_kappa_profile_at_step(
+        self,
+        ax: Optional[plt.Axes] = None,
+        kappa_idx: int = -1,
+        *,
+        color: Optional[str] = None,
+        ls: str = '-',
+        label_suffix: str = '',
+        show_annotations: bool = True,
+    ) -> plt.Axes:
+        """Curvature profile κ(x) at a given sweep step.
+
+        Mirrors ``plot_moment_profile_at_step`` but shows the nonlinear
+        curvature distribution derived by inverting the M-κ relation.
+
+        Parameters
+        ----------
+        kappa_idx : int
+            Sweep index (0 … n-1).  -1 means the last step (ultimate state).
+        color : str, optional
+            Override the profile colour (default ``'steelblue'``).
+        ls : str
+            Linestyle (default ``'-'``).
+        label_suffix : str
+            Appended to the legend label (e.g. ``'  (design)'``).
+        show_annotations : bool
+            When *False*, suppress the κ_hog text box at the interior support.
+        """
+        if ax is None:
+            _, ax = plt.subplots(figsize=(9, 3.5))
+
+        s   = self.sweep
+        n   = len(s['kappa_hog'])
+        idx = int(np.clip(kappa_idx if kappa_idx >= 0 else n - 1, 0, n - 1))
+        La  = self.span_left.L
+        Lb  = self.span_right.L
+
+        q_step       = float(s['q'][idx])
+        M_hog_Nmm    = float(s['M_nl_hog'][idx]) * 1e6     # N·mm, signed ≤ 0
+        kappa_hog_pm = float(s['kappa_hog'][idx]) * 1e3    # ‰/mm, negative
+
+        from dataclasses import replace as _replace
+        cba_step = _replace(self, q=q_step)
+
+        x_a, M_a, x_b, M_b = cba_step.M_profiles(M_hog_Nmm)
+        ka = self.span_left.get_kappa_x_from_M(M_a)    # 1/mm, signed
+        kb = self.span_right.get_kappa_x_from_M(M_b)   # 1/mm, signed
+
+        # θ_pl: integral of |κ| over the hogging (κ < 0) zone [rad]
+        x_all = np.concatenate([x_a, x_b + La])
+        k_all = np.concatenate([ka, kb])
+        theta_u = float(np.trapezoid(-np.clip(k_all, None, 0.0), x_all))   # rad
+
+        C = color if color is not None else 'steelblue'
+
+        ax.plot(x_a,       ka * 1e3, ls, color=C, lw=2.0,
+                label=fr'$\kappa(x)${label_suffix}')
+        ax.plot(x_b + La,  kb * 1e3, ls, color=C, lw=2.0)
+
+        ax.axhline(0, color='black', lw=0.8)
+        for xs in (0, La, La + Lb):
+            ax.axvline(xs, color='gray', lw=0.5, ls=':')
+
+        # fixed y-limits from the ultimate state (consistent across overlay calls)
+        k_hog_ult = float(s['kappa_hog'][-1]) * 1e3
+        k_sag_ult = max(float(s['kappa_sag_a'][-1]),
+                        float(s['kappa_sag_b'][-1])) * 1e3
+        ax.set_ylim(k_hog_ult * 1.12, k_sag_ult * 1.12)
+        ax.invert_yaxis()
+
+        if show_annotations:
+            import matplotlib.transforms as _mtfm
+            _blended = _mtfm.blended_transform_factory(ax.transData, ax.transAxes)
+            ax.text(
+                La, 0.03,
+                fr'$\kappa_{{hog}}$ = {kappa_hog_pm:.4f} ‰/mm',
+                transform=_blended, ha='center', va='bottom', fontsize=8.5, color=C,
+                bbox=dict(boxstyle='round,pad=0.3', facecolor='white',
+                          edgecolor=C, alpha=0.90),
+            )
+            ax.text(
+                0.99, 0.03,
+                fr'$\theta_{{u}}$ = {theta_u * 1e3:.2f} mrad',
+                transform=ax.transAxes, ha='right', va='bottom', fontsize=8.5, color=C,
+                bbox=dict(boxstyle='round,pad=0.3', facecolor='white',
+                          edgecolor=C, alpha=0.90),
+            )
+
+        ax.set_xlabel('$x$  [mm]', fontsize=11)
+        ax.set_ylabel(r'$\kappa$  [‰/mm]', fontsize=11)
         ax.grid(True, alpha=0.3, ls='--')
         return ax
 
