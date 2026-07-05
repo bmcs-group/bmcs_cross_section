@@ -105,16 +105,32 @@ class MKappaAnalysis(BMCSModel):
     )
 
     # Solution arrays (computed) — positive-κ branch (tension at bottom)
+    # kappa_values / M_values / eps_bot_values reflect the selected post-processing
+    # step (raw when non_descending=False, crack-plateau+truncated when True).
     kappa_values: Optional[npt.NDArray[np.float64]] = None
     eps_bot_values: Optional[npt.NDArray[np.float64]] = None
     M_values: Optional[npt.NDArray[np.float64]] = None
     N_values: Optional[npt.NDArray[np.float64]] = None
+
+    # Step 0 — raw solver output (always stored after solve())
+    kappa_raw_values: Optional[npt.NDArray[np.float64]] = None
+    M_raw_values: Optional[npt.NDArray[np.float64]] = None
+    eps_bot_raw_values: Optional[npt.NDArray[np.float64]] = None
+
+    # Step 1 — crack-plateau: max.accumulate up to peak, raw post-peak preserved
+    M_plateau_values: Optional[npt.NDArray[np.float64]] = None
 
     # Negative-κ solution arrays (tension at top, computed in solve())
     kappa_neg_values: Optional[npt.NDArray[np.float64]] = None
     eps_bot_neg_values: Optional[npt.NDArray[np.float64]] = None
     M_neg_values: Optional[npt.NDArray[np.float64]] = None
     N_neg_values: Optional[npt.NDArray[np.float64]] = None
+
+    # Step 0 / 1 — negative branch raw and plateau
+    kappa_neg_raw_values: Optional[npt.NDArray[np.float64]] = None
+    M_neg_raw_values: Optional[npt.NDArray[np.float64]] = None
+    eps_bot_neg_raw_values: Optional[npt.NDArray[np.float64]] = None
+    M_neg_plateau_values: Optional[npt.NDArray[np.float64]] = None
 
     # Cracking curvatures and moments (stored after solve(), computed analytically)
     kappa_cr_pos: Optional[float] = None
@@ -438,12 +454,35 @@ class MKappaAnalysis(BMCSModel):
                     print(f"Stopping at κ = {kappa*1000:.4f} ‰/mm (M dropped below 20% of peak)")
                     break
 
-            self.kappa_values = np.array(kappa_list)
-            self.eps_bot_values = np.array(eps_bot_list)
-            self.M_values = np.array(M_list)
-            self.N_values = np.array(N_list)
+            kappa_arr   = np.array(kappa_list)
+            eps_bot_arr = np.array(eps_bot_list)
+            M_arr       = np.array(M_list)
+            N_arr       = np.array(N_list)
+
+            # Step 0 — raw: store verbatim solver output for inspection
+            self.kappa_raw_values   = kappa_arr
+            self.M_raw_values       = M_arr
+            self.eps_bot_raw_values = eps_bot_arr
+
+            # Step 1 — crack plateau: maximum.accumulate up to peak only,
+            # then append the raw post-peak values unchanged.
+            # This removes the post-crack dip without masking the softening branch.
+            idx_peak = int(np.argmax(M_arr))
+            M_asc = np.maximum.accumulate(M_arr[:idx_peak + 1])
+            self.M_plateau_values = np.concatenate([M_asc, M_arr[idx_peak + 1:]])
+
+            # Step 2 — non-descending: crack plateau + truncate at peak.
+            # Gives a strictly monotone curve that can be cleanly inverted κ(M).
             if self.non_descending:
-                self.M_values = np.maximum.accumulate(self.M_values)
+                self.kappa_values   = kappa_arr[:idx_peak + 1]
+                self.eps_bot_values = eps_bot_arr[:idx_peak + 1]
+                self.M_values       = M_asc
+                self.N_values       = N_arr[:idx_peak + 1]
+            else:
+                self.kappa_values   = kappa_arr
+                self.eps_bot_values = eps_bot_arr
+                self.M_values       = M_arr
+                self.N_values       = N_arr
 
         # ── Negative-κ sweep (tension at top) ────────────────────────────────
         if self.solve_mode == 'positive':
@@ -515,12 +554,32 @@ class MKappaAnalysis(BMCSModel):
                 )
                 break
 
-        self.kappa_neg_values = np.array(kappa_neg_list)
-        self.eps_bot_neg_values = np.array(eps_bot_neg_list)
-        self.M_neg_values = np.array(M_neg_list)
-        self.N_neg_values = np.array(N_neg_list)
+        kappa_neg_arr   = np.array(kappa_neg_list)
+        eps_bot_neg_arr = np.array(eps_bot_neg_list)
+        M_neg_arr       = np.array(M_neg_list)
+        N_neg_arr       = np.array(N_neg_list)
+
+        # Step 0 — raw
+        self.kappa_neg_raw_values   = kappa_neg_arr
+        self.M_neg_raw_values       = M_neg_arr
+        self.eps_bot_neg_raw_values = eps_bot_neg_arr
+
+        # Step 1 — crack plateau (minimum.accumulate for negative branch)
+        idx_peak_neg = int(np.argmin(M_neg_arr))
+        M_neg_asc = np.minimum.accumulate(M_neg_arr[:idx_peak_neg + 1])
+        self.M_neg_plateau_values = np.concatenate([M_neg_asc, M_neg_arr[idx_peak_neg + 1:]])
+
+        # Step 2 — non-descending: crack plateau + truncate at peak
         if self.non_descending:
-            self.M_neg_values = np.minimum.accumulate(self.M_neg_values)
+            self.kappa_neg_values   = kappa_neg_arr[:idx_peak_neg + 1]
+            self.eps_bot_neg_values = eps_bot_neg_arr[:idx_peak_neg + 1]
+            self.M_neg_values       = M_neg_asc
+            self.N_neg_values       = N_neg_arr[:idx_peak_neg + 1]
+        else:
+            self.kappa_neg_values   = kappa_neg_arr
+            self.eps_bot_neg_values = eps_bot_neg_arr
+            self.M_neg_values       = M_neg_arr
+            self.N_neg_values       = N_neg_arr
 
     @property
     def xd_pos(self) -> float:
