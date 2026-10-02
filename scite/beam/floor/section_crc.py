@@ -24,6 +24,8 @@ from scite.cs_design import (
     ReinforcementLayer,
     ReinforcementLayout,
 )
+from scite.cs_components.layup_materials import (LayupMaterial, get_layup_material,
+                                                 layup_materials)
 from scite.cs_design.shapes import TShape
 from scite.matmod.carbon_reinforcement import CarbonReinforcement
 from scite.matmod.ec2_parabola_rectangle import EC2ParabolaRectangle
@@ -76,6 +78,17 @@ class BallastSpec:
                             law=self.law)
 
     @classmethod
+    def from_material(cls, material: LayupMaterial | str, **overrides) -> 'BallastSpec':
+        """Fill spec from a layup-material record (composition-based GWP and cost)."""
+        m = get_layup_material(material) if isinstance(material, str) else material
+        if m.category != 'fill':
+            raise ValueError(f"{m.key!r} is a {m.category} material, not a fill")
+        spec = cls(rho=m.rho, f_c=m.f_c if m.f_c is not None else 0.05,
+                   E=m.E if m.E is not None else 5.0, eps_cu=m.eps_cu,
+                   e_co2=m.gwp_kg, p_eur=m.cost_m3, structural=m.structural, name=m.key)
+        return replace(spec, **overrides)
+
+    @classmethod
     def from_preset(cls, name: str, **overrides) -> 'BallastSpec':
         """Indicative preset (see ``BALLAST_PRESETS``), fields overridable."""
         try:
@@ -86,21 +99,11 @@ class BallastSpec:
         return replace(base, **overrides)
 
 
-# Indicative data (concept crc_pi_slab_bimaterial_section §3.8, D-PI5) — slider
-# defaults, to be replaced by the data of the intended product.
+# Indicative fill presets — derived from the composition-based layup-material
+# register (scite.cs_components.layup_materials): GWP follows from the binder and
+# constituents of each mix. Replace with the data of the intended product.
 BALLAST_PRESETS: dict[str, BallastSpec] = {
-    'FC400': BallastSpec(rho=400.0, f_c=1.0, E=500.0, eps_cu=-0.009,
-                         e_co2=0.50, p_eur=115.0, name='FC400'),
-    'FC600': BallastSpec(rho=600.0, f_c=2.0, E=1250.0, eps_cu=-0.008,
-                         e_co2=0.40, p_eur=105.0, name='FC600'),
-    'FC800': BallastSpec(rho=800.0, f_c=4.0, E=2500.0, eps_cu=-0.006,
-                         e_co2=0.35, p_eur=105.0, name='FC800'),
-    'FC1000': BallastSpec(rho=1000.0, f_c=7.0, E=4000.0, eps_cu=-0.005,
-                          e_co2=0.30, p_eur=115.0, name='FC1000'),
-    'glass-foam gravel': BallastSpec(rho=175.0, f_c=0.05, E=5.0, e_co2=0.50, p_eur=90.0,
-                                     structural=False, name='glass-foam gravel'),
-    'expanded clay': BallastSpec(rho=350.0, f_c=0.05, E=5.0, e_co2=0.30, p_eur=80.0,
-                                 structural=False, name='expanded clay'),
+    key: BallastSpec.from_material(m) for key, m in layup_materials('fill').items()
 }
 
 

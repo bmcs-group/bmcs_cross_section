@@ -127,7 +127,9 @@ def test_g_k_and_volumes_with_fill_above_webs_and_top_plate():
     A = v['A_bay']
     assert v['V_agg'] / A == pytest.approx(V_agg_m2)
     assert v['V_top'] / A == pytest.approx(V_top_m2)
-    assert v['gwp_agg'] == pytest.approx(v['V_agg'] * 600.0 * 0.40)
+    # composition-based: GWP of the fill = V_fill · Σ m_i·e_i of the FC600 mix
+    from scite.cs_components.layup_materials import get_layup_material
+    assert v['gwp_agg'] == pytest.approx(v['V_agg'] * get_layup_material('FC600').gwp_m3)
     assert v['gwp_top'] == pytest.approx(v['V_top'] * 2500.0 * 0.12)
     assert v['cost_top'] == pytest.approx(v['V_top'] * 180.0)
     assert v['gwp_total'] == pytest.approx(v['gwp_conc'] + v['gwp_cfrp']
