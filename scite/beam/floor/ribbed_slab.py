@@ -14,6 +14,8 @@ and implement __post_init__ / volumes() / report().
 Geometry convention
 -------------------
 All lengths in mm.  Coordinate origin at the bottom of the rib web.
+H_rib is the TOTAL depth of the rib section (web + bay slab); H_bay is the
+bay-slab thickness, so the web height is h_w = H_rib - H_bay.
 
   b_f = b_eff (EC2 effective flange width)
   |<---------------------- b_f --------------------->|
@@ -102,8 +104,11 @@ class _RibbedSlabBase(FloorSystemBase):
         h_w_m   = self.h_w   * 1e-3
         H_bay_m = self.H_bay * 1e-3
 
+        # H_rib is the TOTAL depth: web below the slab (h_w = H_rib - H_bay)
+        # plus the bay slab over the full rib spacing L_bay (including the
+        # strip above the web) — the same area as the analysed TShape.
         V_c_rib = B_rib_m * h_w_m * L_rib_m
-        V_c_bay = (L_bay_m - B_rib_m) * H_bay_m * L_rib_m
+        V_c_bay = L_bay_m * H_bay_m * L_rib_m
         V_c     = V_c_rib + V_c_bay
         A_bay   = L_rib_m * L_bay_m
 
@@ -143,8 +148,8 @@ class _RibbedSlabBase(FloorSystemBase):
         B_rib_m = self.B_rib * 1e-3
         h_w_m   = self.h_w   * 1e-3
         H_bay_m = self.H_bay * 1e-3
-        V_web   = B_rib_m * h_w_m * L_rib_m
-        V_fla   = (L_bay_m - B_rib_m) * H_bay_m * L_rib_m
+        V_web   = B_rib_m * h_w_m * L_rib_m          # web below the slab
+        V_fla   = L_bay_m * H_bay_m * L_rib_m        # slab over the full spacing
         A_bay   = L_rib_m * L_bay_m
         return self.rho_conc * (V_web + V_fla) / A_bay
 
