@@ -33,7 +33,7 @@ from .reinforcement import (
 )
 
 # Cross-section assembly
-from .cross_section import CrossSection
+from .cross_section import CrossSection, MatrixRegion, SectionResultants, ComponentResultant
 
 # Stress-strain profile analysis
 from .cs_stress_strain_profile import StressStrainProfile, plot_stress_strain_profile
@@ -55,6 +55,9 @@ __all__ = [
     'create_distributed_reinforcement',
     # Cross-section assembly
     'CrossSection',
+    'MatrixRegion',
+    'SectionResultants',
+    'ComponentResultant',
     # Stress-strain analysis
     'StressStrainProfile',
     'plot_stress_strain_profile',

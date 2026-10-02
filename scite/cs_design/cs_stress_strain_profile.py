@@ -196,9 +196,10 @@ class StressStrainProfile:
         eps_yd = main_mat.eps_yd
         eps_ud = getattr(main_mat, 'eps_ud', getattr(main_mat, 'eps_cr', 0.025))
 
-        # Compressed-fiber strain (absolute value)
+        # Compressed-fiber strain of the PRIMARY concrete (absolute value);
+        # additional regions above it have their own limits.
         if kappa >= 0:
-            eps_comp = abs(self.eps_top)   # compression at top for sagging
+            eps_comp = abs(self.get_strain_at_z(self.cs.y_top_primary))
         else:
             eps_comp = abs(self.eps_bottom)  # compression at bottom for hogging
 
@@ -261,16 +262,38 @@ class StressStrainProfile:
     def get_concrete_stress_profile(self, n_points: int = 100) -> Tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]:
         """
         Get concrete stress distribution along cross-section height.
-        
+
         Args:
             n_points: Number of points for profile
-            
+
         Returns:
             (z_coords, stress_values): Height coordinates and stresses [MPa]
+            of the primary concrete (NaN above its top fibre, where only
+            additional regions exist).
         """
         z_coords, strains = self.get_strain_profile(n_points)
-        stress_values = self.cs.concrete.get_sig(strains)
+        stress_values = np.asarray(self.cs.concrete.get_sig(strains), dtype=float)
+        if self.cs.regions:
+            stress_values = np.where(z_coords <= self.cs.y_top_primary + 1e-9,
+                                     stress_values, np.nan)
         return z_coords, stress_values
+
+    def get_region_stress_profiles(self, n_points: int = 40) -> list:
+        """Stress profiles of the additional matrix regions.
+
+        Returns:
+            list of (region, z_coords, stresses) — one entry per region.
+        """
+        out = []
+        for reg in self.cs.regions:
+            z = np.concatenate([np.linspace(y0, y1, n_points) for y0, y1, _ in reg.get_bands()])
+            sig = np.asarray(reg.material.get_sig(self.get_strain_at_z(z)), dtype=float)
+            out.append((reg, z, sig))
+        return out
+
+    def get_section_resultants(self):
+        """Per-component and total resultants at the current state (``SectionResultants``)."""
+        return self.cs.integrate(self.kappa, self.eps_bottom)
     
     def get_reinforcement_strains_stresses(self) -> Tuple[list, list, list]:
         """
@@ -303,47 +326,14 @@ class StressStrainProfile:
         
         Returns:
             (F_c, F_s, N_total, M_total): Concrete force, steel force, total axial force, total moment
+
+        Delegates to ``CrossSection.integrate`` (the one integration kernel);
+        with regions, F_c is the sum over all matrix components.
         """
-        # Concrete force (integrate stress over area)
-        # Use simplified integration - rectangular stress block approximation
-        z_coords, sigma_c = self.get_concrete_stress_profile(100)
-        
-        # Calculate concrete force by numerical integration
-        F_c = 0.0
-        dz = self.cs.h_total / 100
-        for i, (z, sig) in enumerate(zip(z_coords, sigma_c)):
-            # Get width at this height from shape
-            width = self._get_width_at_z(z)
-            dF = sig * width * dz
-            F_c += dF
-        
-        # Steel forces from reinforcement
-        F_s_total = 0.0
-        z_s_list, eps_s_list, sig_s_list = self.get_reinforcement_strains_stresses()
-        
-        for layer, eps in zip(self.cs.reinforcement.layers, eps_s_list):
-            F_s_total += layer.get_force(eps)
-        
-        # Total axial force
-        N_total = F_c + F_s_total
-        
-        # Moment about reference point (z=0, bottom)
-        # Sign convention: positive curvature (sagging) → positive moment
-        M_c = 0.0
-        for i, (z, sig) in enumerate(zip(z_coords, sigma_c)):
-            width = self._get_width_at_z(z)
-            dF = sig * width * dz
-            M_c += dF * z
-        
-        M_s = 0.0
-        for layer, eps in zip(self.cs.reinforcement.layers, eps_s_list):
-            M_s += layer.get_moment(eps, y_ref=0.0)
-        
+        res = self.cs.integrate(self.kappa, self.eps_bottom, y_ref=0.0)
         # Negate moment to follow standard sign convention:
         # positive curvature (sagging) → positive moment
-        M_total = -(M_c + M_s)
-        
-        return F_c, F_s_total, N_total, M_total
+        return res.N_matrix, res.N_reinf, res.N, -res.M
     
     def get_concrete_force_centroid(self) -> float:
         """
@@ -353,18 +343,9 @@ class StressStrainProfile:
             z_centroid: Height coordinate of concrete force centroid [mm]
                         Clamped to valid range [0, h_total]
         """
-        z_coords, sigma_c = self.get_concrete_stress_profile(100)
-        
-        F_c = 0.0
-        M_c = 0.0
-        dz = self.cs.h_total / 100
-        
-        for z, sig in zip(z_coords, sigma_c):
-            width = self._get_width_at_z(z)
-            dF = sig * width * dz
-            F_c += dF
-            M_c += dF * z
-        
+        res = self.cs.integrate(self.kappa, self.eps_bottom, y_ref=0.0)
+        F_c, M_c = res.N_matrix, res.M_matrix
+
         # Centroid: z_c = M_c / F_c
         # Use higher threshold (100 N = 0.1 kN) to avoid numerical issues at low forces
         if abs(F_c) > 100.0:
@@ -482,8 +463,11 @@ class StressStrainProfile:
         
         # Calculate forces
         F_c, F_s, N_total, M_total = self.get_force_resultants()
-        F_c_val = to_scalar(F_c) / 1000  # Convert to kN
+        res = self.get_section_resultants()
+        F_c_val = to_scalar(res.components[0].N) / 1000  # primary concrete [kN]
         F_s_val = to_scalar(F_s) / 1000  # Convert to kN
+        region_profiles = self.get_region_stress_profiles()
+        region_forces = [(c, c.N / 1000) for c in res.grouped()[1:]]    # [kN], by label
         
         # Find neutral axis (where strain = 0)
         neutral_axis_z = None
@@ -563,17 +547,25 @@ class StressStrainProfile:
         max_stress = f_c * 2.5  # Use 2.5x compressive strength for scale
         
         # Force range - primary axis
-        max_force = max(abs(F_c_val), abs(F_s_val)) if (abs(F_c_val) > 0 or abs(F_s_val) > 0) else 100.0
-        
+        all_forces = [abs(F_c_val), abs(F_s_val)] + [abs(f) for _, f in region_forces]
+        max_force = max(all_forces) if max(all_forces) > 0 else 100.0
+
         # Scale factor: map stress to force axis
         stress_to_force_scale = max_force / max_stress if max_stress > 0 else 1.0
-        
+
         # Concrete stress (plot scaled to force axis)
         if len(stresses_c) > 0:
             stresses_c_scaled = stresses_c * stress_to_force_scale
             ax_stress.fill_betweenx(z_stress, 0, stresses_c_scaled, alpha=0.15, color='steelblue')
             ax_stress.plot(stresses_c_scaled, z_stress, 'b-', linewidth=3)
-            max_idx = np.argmax(np.abs(stresses_c))
+            max_idx = int(np.nanargmax(np.abs(stresses_c)))
+
+        # Additional matrix regions (ballast, top plate, ...) — own colour each
+        from scite.cs_design.cross_section import REGION_COLOR
+        for reg, z_r, sig_r in region_profiles:
+            color_r = reg.color or REGION_COLOR
+            ax_stress.fill_betweenx(z_r, 0, sig_r * stress_to_force_scale, alpha=0.2, color=color_r)
+            ax_stress.plot(sig_r * stress_to_force_scale, z_r, '-', color=color_r, linewidth=2.5)
         
         # Zero line
         ax_stress.axvline(x=0, color='k', linestyle='--', linewidth=1.5, alpha=0.7)
@@ -612,8 +604,25 @@ class StressStrainProfile:
                 ax_stress.axhline(y=mid_height, color='gray', linestyle='-', 
                                 alpha=0.5, linewidth=1.0, zorder=0)
             
-            # Calculate actual compression zone centroid
-            z_c_centroid = self.get_concrete_force_centroid()
+            # Primary concrete force centroid (clamped into the section)
+            z_c_centroid = (min(max(res.components[0].y_centroid, 0.0), self.cs.h_total)
+                            if abs(res.components[0].N) > 100.0 else self.cs.h_total / 2)
+
+            # Region forces at their own centroids
+            for comp, F_r in region_forces:
+                if abs(F_r) <= 0.1:
+                    continue
+                reg = next(r for r in self.cs.regions if r.label == comp.label)
+                color_r = reg.color or REGION_COLOR
+                ax_stress.arrow(0, comp.y_centroid, F_r, 0,
+                                head_width=self.cs.h_total * 0.04, head_length=max_force * 0.02,
+                                fc=color_r, ec='black', linewidth=2,
+                                length_includes_head=True, zorder=2)
+                ax_stress.text(F_r, comp.y_centroid + label_offset,
+                               f'F_{comp.label} = {F_r:.1f} kN',
+                               ha='left', va='bottom', fontsize=10, color='black',
+                               bbox=dict(boxstyle='round', facecolor=color_r, alpha=0.2,
+                                         edgecolor='black', linewidth=1.0))
             
             # Reinforcement levels - sort by z for bottom-to-top numbering
             layer_indices = sorted(range(len(z_reinf)), key=lambda i: z_reinf[i])

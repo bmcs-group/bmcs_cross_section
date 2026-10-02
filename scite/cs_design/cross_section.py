@@ -10,7 +10,8 @@ The key method get_N_M(kappa, eps_top) computes axial force and moment
 for a given strain distribution, which is the interface mkappa will use.
 """
 
-from typing import Optional, Union
+from dataclasses import dataclass, field
+from typing import List, Literal, Optional, Union
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -19,11 +20,20 @@ from matplotlib.patches import Polygon
 from matplotlib.patches import Rectangle as MPLRectangle
 from scite.core import BMCSModel, ui_field
 from scite.cs_design.reinforcement import ReinforcementLayout
-from scite.cs_design.shapes import IShape, RectangularShape, TShape
+from scite.cs_design.shapes import BandShape, IShape, InvTShape, RectangularShape, TShape
+from scite.matmod.carbon_reinforcement import CarbonReinforcement
 from scite.matmod.ec2_concrete import EC2Concrete
 from scite.matmod.ec2_parabola_rectangle import EC2ParabolaRectangle
+from scite.matmod.foam_concrete import FoamConcrete
+from scite.matmod.steel_reinforcement import SteelReinforcement
 
 ConcreteMaterial = Union[EC2ParabolaRectangle, EC2Concrete]
+RegionShape = Union[BandShape, RectangularShape, TShape, InvTShape, IShape]
+RegionMaterial = Union[EC2ParabolaRectangle, EC2Concrete, FoamConcrete,
+                       SteelReinforcement, CarbonReinforcement]
+
+# Default sketch colour of an additional matrix region (ochre — ballast / fill)
+REGION_COLOR = '#d4a017'
 
 
 def to_scalar(val):
@@ -31,6 +41,177 @@ def to_scalar(val):
     if hasattr(val, 'item'):
         return float(val.item())
     return float(val)
+
+
+# ── Integration kernel helpers ────────────────────────────────────────────────
+
+# Strain attributes at which a material law changes branch.  Inserting the
+# corresponding heights as integration breakpoints makes the 2-point Gauss rule
+# exact for piecewise-polynomial laws (parabola-rectangle) and removes the
+# quadrature error at kinks and cliffs.
+_BREAKPOINT_ATTRS = ('eps_c2_computed', 'eps_cu2_computed', 'eps_c1', 'eps_cu1',
+                     'eps_cr_computed', 'eps_tu_computed', 'eps_cr', 'eps_end')
+_SYMMETRIC_BREAKPOINT_ATTRS = ('eps_yd', 'eps_ud')
+
+
+def _strain_breakpoints(material) -> np.ndarray:
+    """Branch strains of a material law (the law's own list when it provides one)."""
+    bp = getattr(material, 'strain_breakpoints', None)
+    if bp is not None:
+        return np.asarray(bp, dtype=float)
+    out = [0.0]
+    for name in _BREAKPOINT_ATTRS:
+        v = getattr(material, name, None)
+        if isinstance(v, (int, float)) and np.isfinite(v):
+            out.append(float(v))
+    for name in _SYMMETRIC_BREAKPOINT_ATTRS:
+        v = getattr(material, name, None)
+        if isinstance(v, (int, float)) and np.isfinite(v):
+            out.extend((float(v), -float(v)))
+    return np.asarray(out, dtype=float)
+
+
+def _initial_modulus(material) -> float:
+    """Initial (uncracked) modulus of a matrix or reinforcement material [MPa]."""
+    for name in ('E_ct_computed', 'E_s', 'E'):
+        v = getattr(material, name, None)
+        if isinstance(v, (int, float)):
+            return float(v)
+    return 0.0
+
+
+def _band_moments(bands) -> tuple[float, float, float]:
+    """(A, S_0, I_0) about y = 0 of piecewise-constant width bands."""
+    A = S = I = 0.0
+    for y0, y1, b in bands:
+        A += b * (y1 - y0)
+        S += b * (y1 ** 2 - y0 ** 2) / 2.0
+        I += b * (y1 ** 3 - y0 ** 3) / 3.0
+    return A, S, I
+
+
+class MatrixRegion(BMCSModel):
+    """
+    Additional matrix component of a composite cross-section.
+
+    A region shares the plane-section strain field of the primary section
+    (rigid connection) but carries its own constitutive law — e.g. a foam
+    concrete ballast between and above the ribs, a concrete top cover plate,
+    or a steel plate / profile.  Regions are assumed disjoint from the primary
+    shape and from each other.
+
+    Attributes:
+        shape: Geometry on the section's y-axis (y=0 at the primary bottom).
+               ``BandShape`` is the usual choice; other shapes start at y=0
+               and are lifted by ``y_offset``.
+        material: Constitutive law (compression-only or symmetric).
+        y_offset: Vertical shift of the shape [mm].
+        label: Component name — regions with the same label are reported
+               together (e.g. a fill split into two bands).
+        color: Sketch / plot colour (None → default ochre).
+    """
+
+    shape: RegionShape
+    material: RegionMaterial
+    y_offset: float = 0.0
+    label: str = 'region'
+    color: Optional[str] = None
+
+    def get_bands(self) -> list[tuple[float, float, float]]:
+        """Width bands ``[(y0, y1, b), ...]`` on the section's y-axis."""
+        o = self.y_offset
+        return [(y0 + o, y1 + o, b) for y0, y1, b in self.shape.get_bands()]
+
+    @property
+    def y_bot(self) -> float:
+        """Lowest fibre of the region [mm]."""
+        return min(y0 for y0, _, _ in self.get_bands())
+
+    @property
+    def y_top(self) -> float:
+        """Highest fibre of the region [mm]."""
+        return max(y1 for _, y1, _ in self.get_bands())
+
+    @property
+    def area(self) -> float:
+        """Region area [mm²]."""
+        return _band_moments(self.get_bands())[0]
+
+    def get_width_at_y(self, y: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
+        """Region width at y [mm] (0 outside the region)."""
+        y = np.atleast_1d(np.asarray(y, dtype=float))
+        w = np.zeros_like(y)
+        for y0, y1, b in self.get_bands():
+            w = np.where((y >= y0) & (y <= y1), b, w)
+        return w
+
+    def get_boundary_polygons(self) -> list[npt.NDArray[np.float64]]:
+        """Drawing polygons, horizontally centred at x = 0."""
+        if hasattr(self.shape, 'get_boundary_polygons'):
+            polys = self.shape.get_boundary_polygons()
+        else:
+            polys = [self.shape.get_boundary_polygon()]
+        return [p + np.array([0.0, self.y_offset]) for p in polys]
+
+
+@dataclass
+class ComponentResultant:
+    """Force resultant of one matrix component (primary concrete or a region)."""
+
+    label: str
+    N: float            # axial force [N] (negative = compression)
+    M: float            # Σ dF·(y − y_ref) [N·mm]
+    y_ref: float
+    y_bot: float
+    y_top: float
+
+    @property
+    def y_centroid(self) -> float:
+        """Height of the force resultant [mm] (mid-height when |N| is negligible)."""
+        if abs(self.N) > 1e-9:
+            return self.y_ref + self.M / self.N
+        return 0.5 * (self.y_bot + self.y_top)
+
+
+@dataclass
+class SectionResultants:
+    """Result of ``CrossSection.integrate``: per-component and total N, M."""
+
+    components: List[ComponentResultant]      # [0] = primary concrete
+    N_reinf: float                            # [N]
+    M_reinf: float                            # [N·mm] about y_ref
+    layer_forces: List[float] = field(default_factory=list)
+    y_ref: float = 0.0
+
+    @property
+    def N_matrix(self) -> float:
+        return sum(c.N for c in self.components)
+
+    @property
+    def M_matrix(self) -> float:
+        return sum(c.M for c in self.components)
+
+    @property
+    def N(self) -> float:
+        return self.N_matrix + self.N_reinf
+
+    @property
+    def M(self) -> float:
+        """Σ dF·(y − y_ref) over all components [N·mm] — negative for sagging."""
+        return self.M_matrix + self.M_reinf
+
+    def grouped(self) -> List[ComponentResultant]:
+        """Components merged by label (e.g. a fill split into two bands), in order."""
+        out: dict[str, ComponentResultant] = {}
+        for c in self.components:
+            g = out.get(c.label)
+            if g is None:
+                out[c.label] = ComponentResultant(c.label, c.N, c.M, c.y_ref, c.y_bot, c.y_top)
+            else:
+                g.N += c.N
+                g.M += c.M
+                g.y_bot, g.y_top = min(g.y_bot, c.y_bot), max(g.y_top, c.y_top)
+        return list(out.values())
 
 
 class CrossSection(BMCSModel):
@@ -52,17 +233,26 @@ class CrossSection(BMCSModel):
         - Compression: Negative strain/stress
         - Tension: Positive strain/stress
     
+    Composite sections: ``regions`` adds further matrix components (each a
+    ``MatrixRegion`` with its own shape and law) that share the strain field.
+    ``h_total`` is then the envelope height over all components, while
+    ``y_top_primary`` is the top fibre of the primary concrete.
+
     Attributes:
-        shape: Geometric shape (RectangularShape, TShape, IShape)
+        shape: Geometric shape (RectangularShape, TShape, InvTShape, IShape)
         concrete: Concrete material model (EC2ParabolaRectangle)
         reinforcement: Reinforcement layout (ReinforcementLayout)
+        regions: Additional matrix components (empty = plain section)
         n_points: Number of discretization points for integration
+        quadrature: 'gauss' (band-wise Gauss with breakpoints) or 'legacy'
+                    (100-point uniform rule used before the kernel refactor)
     """
-    
-    shape: RectangularShape | TShape | IShape
+
+    shape: RectangularShape | TShape | InvTShape | IShape
     concrete: ConcreteMaterial
     reinforcement: ReinforcementLayout
-    
+    regions: List[MatrixRegion] = []
+
     n_points: int = ui_field(
         100,
         label=r"$n_{points}$",
@@ -73,22 +263,144 @@ class CrossSection(BMCSModel):
         ge=10,
         le=500
     )
-    
+
+    quadrature: Literal['gauss', 'legacy'] = ui_field(
+        'gauss',
+        label="Quadrature",
+        description=("'gauss' = 2-point Gauss per band between breakpoints (exact for "
+                     "parabola-rectangle); 'legacy' = former 100-point uniform rule"),
+    )
+
     def model_post_init(self, __context) -> None:
         """Initialize with defaults if needed."""
         if self.concrete is None:
             self.concrete = EC2ParabolaRectangle(f_ck=30.0, alpha_cc=1.0, gamma_c=1.5)
         if self.reinforcement is None:
             self.reinforcement = ReinforcementLayout()
-    
+
     @property
-    def h_total(self) -> float:
-        """Total height of cross-section [mm]"""
+    def y_top_primary(self) -> float:
+        """Top fibre of the primary concrete shape [mm]."""
         if hasattr(self.shape, 'h'):
             return self.shape.h
         elif hasattr(self.shape, 'h_total'):
             return self.shape.h_total
         return 0.0
+
+    @property
+    def h_total(self) -> float:
+        """Total (envelope) height of the cross-section over all components [mm]."""
+        h = self.y_top_primary
+        for reg in self.regions:
+            h = max(h, reg.y_top)
+        return h
+
+    def get_width_at_y(self, y: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
+        """Total matrix width at y, summed over the primary shape and all regions [mm]."""
+        y = np.atleast_1d(np.asarray(y, dtype=float))
+        w = np.where(y <= self.y_top_primary, self.shape.get_width_at_y(y), 0.0)
+        for reg in self.regions:
+            w = w + reg.get_width_at_y(y)
+        return w
+
+    def transformed_properties(self, E_ref: Optional[float] = None) -> tuple[float, float, float]:
+        """Uncracked transformed matrix properties ``(A, S_0, I_0)`` about y = 0.
+
+        Region contributions are weighted by n_r = E_r / E_ref (default E_ref =
+        primary concrete modulus).  Reinforcement is NOT included — callers add
+        it with their own modular ratio.
+        """
+        if E_ref is None:
+            E_ref = _initial_modulus(self.concrete)
+        A, S, I = _band_moments(self.shape.get_bands())
+        for reg in self.regions:
+            n_r = _initial_modulus(reg.material) / E_ref if E_ref > 0 else 0.0
+            A_r, S_r, I_r = _band_moments(reg.get_bands())
+            A, S, I = A + n_r * A_r, S + n_r * S_r, I + n_r * I_r
+        return A, S, I
+
+    # ── Integration kernel ────────────────────────────────────────────────────
+
+    def _components(self):
+        """(label, bands, material, width_fn) for the primary and each region."""
+        yield ('concrete', self.shape.get_bands(), self.concrete, self.shape.get_width_at_y)
+        for reg in self.regions:
+            yield (reg.label, reg.get_bands(), reg.material, reg.get_width_at_y)
+
+    def _integrate_gauss(self, bands, material, kappa, eps_bot, y_ref, H):
+        n_sub = max(self.n_points // 2, 10)
+        bps = _strain_breakpoints(material)
+        nodes, weights = [], []
+        for y0, y1, b in bands:
+            if b == 0.0 or y1 <= y0:
+                continue
+            m = max(1, int(np.ceil(n_sub * (y1 - y0) / H)))
+            pts = np.linspace(y0, y1, m + 1)
+            if abs(kappa) > 0.0:
+                yb = (eps_bot - bps) / kappa
+                pts = np.union1d(pts, yb[(yb > y0) & (yb < y1)])
+            half = 0.5 * np.diff(pts)
+            mid = 0.5 * (pts[:-1] + pts[1:])
+            off = half / np.sqrt(3.0)
+            nodes.extend((mid - off, mid + off))
+            weights.extend((half * b, half * b))
+        if not nodes:
+            return 0.0, 0.0
+        y = np.concatenate(nodes)
+        w = np.concatenate(weights)
+        sig = np.broadcast_to(np.asarray(material.get_sig(eps_bot - kappa * y), dtype=float),
+                              y.shape)
+        F = sig * w
+        return float(np.sum(F)), float(np.sum(F * (y - y_ref)))
+
+    @staticmethod
+    def _integrate_legacy(width_fn, material, kappa, eps_bot, y_ref, H, y_cap):
+        # Former StressStrainProfile rule: 100 uniform points, weight H/100.
+        z = np.linspace(0.0, H, 100)
+        dz = H / 100.0
+        width = np.where(z <= y_cap, np.asarray(width_fn(z), dtype=float), 0.0)
+        sig = np.broadcast_to(np.asarray(material.get_sig(eps_bot - kappa * z), dtype=float),
+                              z.shape)
+        F = sig * width * dz
+        return float(np.sum(F)), float(np.sum(F * (z - y_ref)))
+
+    def integrate(self, kappa: float, eps_bot: float, y_ref: float = 0.0) -> SectionResultants:
+        """Integrate all matrix components and reinforcement layers.
+
+        Plane sections: ε(y) = eps_bot − κ·y (y from the bottom, positive up).
+
+        Args:
+            kappa: Curvature [1/mm] (positive → compression at the top)
+            eps_bot: Strain at y = 0 [-]
+            y_ref: Moment reference height [mm]
+
+        Returns:
+            SectionResultants with per-component ``N``, ``M = Σ dF·(y − y_ref)``
+            and the reinforcement contribution.  Note the sign: ``M`` is
+            negative for sagging (``StressStrainProfile`` reports −M).
+        """
+        H = self.h_total
+        comps = []
+        for label, bands, material, width_fn in self._components():
+            if self.quadrature == 'legacy':
+                y_cap = self.y_top_primary if material is self.concrete else np.inf
+                N, M = self._integrate_legacy(width_fn, material, kappa, eps_bot, y_ref, H, y_cap)
+            else:
+                N, M = self._integrate_gauss(bands, material, kappa, eps_bot, y_ref, H)
+            comps.append(ComponentResultant(
+                label=label, N=N, M=M, y_ref=y_ref,
+                y_bot=min(y0 for y0, _, _ in bands), y_top=max(y1 for _, y1, _ in bands)))
+
+        N_s = M_s = 0.0
+        forces = []
+        for layer in self.reinforcement.layers:
+            eps = eps_bot - kappa * layer.z
+            F = to_scalar(layer.get_force(eps))
+            forces.append(F)
+            N_s += F
+            M_s += to_scalar(layer.get_moment(eps, y_ref))
+        return SectionResultants(components=comps, N_reinf=N_s, M_reinf=M_s,
+                                 layer_forces=forces, y_ref=y_ref)
     
     @property
     def A_c(self) -> float:
@@ -150,33 +462,8 @@ class CrossSection(BMCSModel):
             >>> eps_bottom = 0.001  # Bottom in tension
             >>> N, M = cs.get_N_M(kappa, eps_bottom)
         """
-        # 1. Get discretization points (y from bottom to top)
-        y = self.shape.get_y_coordinates(self.n_points)
-        widths = self.shape.get_width_at_y(y)
-        
-        # 2. Compute strain distribution (plane sections remain plane)
-        # ε(y) = ε_bottom - κ×y (strain decreases going upward for positive κ)
-        strains = eps_bottom - kappa * y
-        
-        # 3. Get concrete stresses
-        sig_c = self.concrete.get_sig(strains)
-        
-        # 4. Compute element areas (trapezoidal rule)
-        dy = np.diff(y, prepend=0)
-        dA_c = widths * dy
-        
-        # 5. Concrete contribution to N and M
-        N_c = np.sum(sig_c * dA_c)
-        M_c = np.sum(sig_c * dA_c * (y - y_ref))
-        
-        # 6. Steel contribution from reinforcement layout
-        N_s, M_s = self.reinforcement.get_N_M(kappa, eps_bottom, y_ref)
-        
-        # 7. Total force and moment
-        N_total = to_scalar(N_c + N_s)
-        M_total = to_scalar(M_c + M_s)
-        
-        return N_total, M_total
+        res = self.integrate(kappa, eps_bottom, y_ref)
+        return float(res.N), float(res.M)
     
     def get_neutral_axis(
         self,
