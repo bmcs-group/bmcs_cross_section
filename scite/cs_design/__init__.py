@@ -2,7 +2,7 @@
 Cross-section design module - Modern Pydantic-based implementation.
 
 This module provides a clean, type-safe API for cross-section design with:
-- Geometric shapes (RectangularShape, TShape, IShape)
+- Geometric shapes (RectangularShape, TShape, InvTShape, BandShape, IShape)
 - Catalog-integrated reinforcement layers (proxy pattern)
 - Complete cross-section assembly
 
@@ -16,7 +16,7 @@ Legacy traits-based modules have been moved to legacy/ folder.
 """
 
 # Geometric shapes
-from .shapes import RectangularShape, TShape, IShape
+from .shapes import RectangularShape, TShape, InvTShape, BandShape, IShape
 
 # Reinforcement layers (catalog-integrated proxies)
 from .reinforcement import (
@@ -42,6 +42,8 @@ __all__ = [
     # Shapes
     'RectangularShape',
     'TShape',
+    'InvTShape',
+    'BandShape',
     'IShape',
     # Reinforcement - Catalog-integrated proxies
     'BarReinforcement',
