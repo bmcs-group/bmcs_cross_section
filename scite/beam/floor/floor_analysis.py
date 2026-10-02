@@ -256,3 +256,45 @@ class FloorAnalysisPair:
             sls=FloorAnalysis(cs=cs_sls, L_mm=L_mm, n_load_steps=n_load_steps),
             uls=FloorAnalysis(cs=cs_uls, L_mm=L_mm, n_load_steps=n_load_steps),
         )
+
+    @classmethod
+    def for_crc_pi_rib(
+        cls,
+        b_w: float, h_w: float, b_f: float, h_f: float,
+        f_ck: float, A_s: float, z_s: float,
+        E_f: float, f_fk: float,
+        L_mm: float,
+        A_grid: float = 0.0, z_grid: float = 15.0,
+        E_grid: Optional[float] = None, f_grid: Optional[float] = None,
+        ballast=None, top_plate=None,
+        gamma_c: float = 1.5, gamma_f: float = 1.25, alpha_cc: float = 0.85,
+        n_load_steps: int = 41,
+    ) -> "FloorAnalysisPair":
+        """Build SLS + ULS pair for an inverted-T (Pi-slab) CRC rib.
+
+        Parameters
+        ----------
+        b_w, h_w : web width and height above the plate [mm]
+        b_f, h_f : plate effective width (b_eff) and thickness [mm]
+        A_s, z_s : concentrated CFRP bars under the web [mm², mm from the soffit]
+        A_grid, z_grid, E_grid, f_grid : longitudinal plate-grid layer
+        ballast, top_plate : optional ``BallastSpec`` / ``TopPlateSpec``
+
+        SLS: characteristic values, all partial factors 1.0.
+        ULS: EC2 design concrete (also the top plate), CFRP 1/gamma_f, the fill
+        with its own ``ballast.gamma``.
+        """
+        from scite.beam.floor.section_crc import FloorSectionCRCPiRib
+
+        sec = FloorSectionCRCPiRib(b_w=b_w, h_w=h_w, b_f=b_f, h_f=h_f,
+                                   f_ck=f_ck, A_s=A_s, z_s=z_s, E_f=E_f, f_fk=f_fk,
+                                   A_grid=A_grid, z_grid=z_grid, E_grid=E_grid, f_grid=f_grid,
+                                   ballast=ballast, top_plate=top_plate)
+        gamma_agg = ballast.gamma if ballast is not None else 1.0
+        cs_sls = sec.build_cs(gamma_c=1.0, gamma_f=1.0, alpha_cc=1.0, gamma_agg=1.0)
+        cs_uls = sec.build_cs(gamma_c=gamma_c, gamma_f=gamma_f, alpha_cc=alpha_cc,
+                              gamma_agg=gamma_agg)
+        return cls(
+            sls=FloorAnalysis(cs=cs_sls, L_mm=L_mm, n_load_steps=n_load_steps),
+            uls=FloorAnalysis(cs=cs_uls, L_mm=L_mm, n_load_steps=n_load_steps),
+        )

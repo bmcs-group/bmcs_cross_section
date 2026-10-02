@@ -14,12 +14,16 @@ FloorSectionRC     — rectangular RC section (flat slab strip)
 FloorSectionRCRib  — T-section RC rib (ribbed slab, web + bay-slab flange)
 FloorSectionCRC    — rectangular CRC section (flat slab strip, CFRP)
 FloorSectionCRCRib — T-section CRC rib (ribbed slab, web + bay-slab flange)
+FloorSectionCRCPiRib — inverted-T CRC rib (Pi slab) + optional ballast / top plate
+BallastSpec        — ballast fill (FoamConcrete law or mass only); BALLAST_PRESETS
+TopPlateSpec       — concrete top cover plate
 FloorAnalysis      — single BeamDeflectionAnalysis wrapper with p-conversion
 FloorAnalysisPair  — SLS + ULS pair (alias: BeamPair); factory methods:
                        .for_rc()       — flat slab (rectangular RC)
                        .for_rc_rib()   — ribbed slab rib (T-section RC)
                        .for_crc()      — flat slab (rectangular CRC/CFRP)
                        .for_crc_rib()  — ribbed slab rib (T-section CRC/CFRP)
+                       .for_crc_pi_rib() — Pi slab rib (inverted T CRC, composite)
 BeamPair           — alias for FloorAnalysisPair
 ec2_beff_rib       — EC2 §5.3.2.1 effective flange width for T-section rib
 
@@ -31,13 +35,16 @@ FlatSlab           — SRC flat slab (rectangular, 1 m strip)
 CRCFlatSlab        — CRC flat slab (rectangular, 1 m strip, CFRP)
 SRCRibbedSlab      — SRC ribbed slab (T-section rib + bay slab, steel)
 CRCRibbedSlab      — CRC ribbed slab (T-section rib, CFRP + bay slab, CFRP)
+CRCPiSlab          — CRC Pi slab (inverted-T rib, plate at the bottom, opt. fill + top plate)
 """
 from .flat_slab import CRCFlatSlab, FlatSlab
 from .floor_analysis import FloorAnalysis, FloorAnalysisPair, ec2_beff_rib
 from .floor_system_base import FloorSystemBase
 from .load_model import LoadModel
+from .pi_slab import CRCPiSlab
 from .ribbed_slab import CRCRibbedSlab, SRCRibbedSlab
-from .section_crc import FloorSectionCRC, FloorSectionCRCRib
+from .section_crc import (BALLAST_PRESETS, BallastSpec, FloorSectionCRC, FloorSectionCRCPiRib,
+                          FloorSectionCRCRib, TopPlateSpec)
 from .section_rc import FloorSectionRC, FloorSectionRCRib
 
 # Preferred short alias — FloorAnalysisPair kept for backward compatibility
@@ -49,6 +56,10 @@ __all__ = [
     "FloorSectionRCRib",
     "FloorSectionCRC",
     "FloorSectionCRCRib",
+    "FloorSectionCRCPiRib",
+    "BallastSpec",
+    "BALLAST_PRESETS",
+    "TopPlateSpec",
     "FloorAnalysis",
     "FloorAnalysisPair",
     "BeamPair",
@@ -60,4 +71,5 @@ __all__ = [
     "CRCFlatSlab",
     "SRCRibbedSlab",
     "CRCRibbedSlab",
+    "CRCPiSlab",
 ]

@@ -22,7 +22,8 @@ scite.beam.floor
 ├── floor_system_base.py  ← abstract base class (assess / volumes)
 │        │
 │        ├── flat_slab.py     ← FlatSlab (SRC) · CRCFlatSlab
-│        └── ribbed_slab.py   ← SRCRibbedSlab · CRCRibbedSlab
+│        ├── ribbed_slab.py   ← SRCRibbedSlab · CRCRibbedSlab
+│        └── pi_slab.py       ← CRCPiSlab (inverted-T rib, opt. ballast + top plate)
 │
 └── __init__.py        ← public API
 ```
@@ -55,7 +56,16 @@ FloorSectionCRC(b, h, f_ck, A_s, z_s, E_f, f_fk)
   .build_cs(gamma_c, gamma_f)  →  CrossSection
 
 FloorSectionCRCRib(b_w, h_w, b_f, h_f, …)
+
+FloorSectionCRCPiRib(b_w, h_w, b_f, h_f, …, A_grid, z_grid, ballast, top_plate)
+  .build_cs(gamma_c, gamma_f, alpha_cc, gamma_agg)  →  composite CrossSection
+      InvTShape (plate at the bottom) + MatrixRegions 'ballast' / 'top plate'
 ```
+
+`BallastSpec` (fill height from the plate top, FoamConcrete parameters, GWP,
+cost; `structural=False` = mass only) with indicative `BALLAST_PRESETS`
+(FC400…FC1000, glass-foam gravel, expanded clay) and `TopPlateSpec` describe
+the optional components of a Pi-slab rib.
 
 ### `floor_analysis.py` — `FloorAnalysis`, `FloorAnalysisPair`, `ec2_beff_rib`
 
@@ -73,6 +83,7 @@ four **factory methods** that internally create the appropriate section objects:
 | `.for_rc_rib(b_w, h_w, b_f, h_f, …, f_yk)` | T-section | steel |
 | `.for_crc(b, h, …, E_f, f_fk)` | rectangular | CFRP |
 | `.for_crc_rib(b_w, h_w, b_f, h_f, …, E_f, f_fk)` | T-section | CFRP |
+| `.for_crc_pi_rib(b_w, h_w, b_f, h_f, …, ballast, top_plate)` | inverted T + fill / top plate | CFRP (bars + plate grid) |
 
 `ec2_beff_rib(b_w, L_bay, L_rib, l0_factor)` implements EC2 §5.3.2.1
 effective flange width; called automatically in ribbed slab `__post_init__`.
@@ -149,6 +160,17 @@ to avoid duplication.
 [(bay_beam, 1.0, 'Bay slab'), (rib_beam, s_m, 'Rib')]   # SRC
 [(bay_beam, 1.0, 'Bay slab'), (rib_beam, s_m, 'CRC rib')]  # CRC
 ```
+
+### `pi_slab.py` — `CRCPiSlab`
+
+CRC **Pi slab**: the continuous plate at the bottom, ribs pointing up. Subclass
+of `CRCRibbedSlab` (same CFRP fields and resource accounting) with an
+inverted-T rib built by `for_crc_pi_rib`: tension reinforcement = bars
+`A_f_rib` + longitudinal plate grid `r_long·A_f_bay·b_eff`. Optional `ballast`
+(fill between the webs, above them over the full width) and `top_plate` act in
+the rib direction; for the bay strip (the plate between the webs) they are mass
+only. `g_k` and `volumes()` add `V_agg / gwp_agg / cost_agg` and
+`V_top / gwp_top / cost_top`. Demo: `notebooks/beam/floor/floor_pi_slab.ipynb`.
 
 ---
 
