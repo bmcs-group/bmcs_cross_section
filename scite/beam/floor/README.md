@@ -170,7 +170,7 @@ inverted-T rib built by `for_crc_pi_rib`: tension reinforcement = bars
 (fill between the webs, above them over the full width) and `top_plate` act in
 the rib direction; for the bay strip (the plate between the webs) they are mass
 only. `g_k` and `volumes()` add `V_agg / gwp_agg / cost_agg` and
-`V_top / gwp_top / cost_top`. Demo: `notebooks/beam/floor/floor_pi_slab.ipynb`.
+`V_top / gwp_top / cost_top`. Demo: `notebooks/beam/verification/04_crc_pi_slab.ipynb`.
 
 ---
 
