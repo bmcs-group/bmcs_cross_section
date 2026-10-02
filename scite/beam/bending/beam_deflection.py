@@ -263,18 +263,12 @@ class BeamDeflectionAnalysis(BMCSModel):
         """
         Gross (uncracked) moment of inertia of the cross-section [mm⁴].
 
-        Computed by integrating b(y)·y² over the section height,
-        where y is measured from the centroid of the gross section.
+        Exact band-wise integral of b(y)·(y − y_c)² about the gross centroid;
+        matrix regions of a composite section enter with n_r = E_r / E_c.
         """
-        n_pts = max(self.n_x, 200)
-        h     = self.cs.h_total
-        y_arr = np.linspace(0.0, h, n_pts)
-        b_arr = np.array([float(self.cs.shape.get_width_at_y(np.array([y]))[0])
-                          for y in y_arr], dtype=float)
-        A_g   = float(np.trapezoid(b_arr, y_arr))
-        y_c   = float(np.trapezoid(b_arr * y_arr, y_arr)) / A_g
-        I_g   = float(np.trapezoid(b_arr * (y_arr - y_c) ** 2, y_arr))
-        return I_g
+        A_g, S_0, I_0 = self.cs.transformed_properties()
+        y_c = S_0 / A_g
+        return float(I_0 - y_c * S_0)
 
     # ── Plotting ──────────────────────────────────────────────────────────────
     #
@@ -407,8 +401,8 @@ class BeamDeflectionAnalysis(BMCSModel):
                 A_s  = layers[0].A_s
                 z_s  = layers[0].z          # distance from bottom
                 d    = self.cs.h_total - z_s  # effective depth from top
-                b    = float(self.cs.shape.get_width_at_y(
-                               np.array([self.cs.h_total]))[0])  # top width
+                b    = float(self.cs.get_width_at_y(
+                               np.array([self.cs.h_total]))[0])  # top width (all components)
                 if E_s is not None and b > 0 and d > 0:
                     n     = E_s / E_c
                     # NA from top: b·x²/2 = n·A_s·(d−x)

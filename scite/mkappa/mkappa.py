@@ -31,6 +31,8 @@ _FAILURE_MODE_MARKERS: dict[str, tuple[str, int, str]] = {
     'reinforcement': ('x', 14, 'CFRP/steel rupture (η_f > η_c)'),
     'balanced':      ('o', 12, 'Balanced / simultaneous'),
 }
+# Marker cycle for additional matrix regions in plot_mk(show_component_markers=True)
+_REGION_MARKERS: tuple[str, ...] = ('s', '^', 'v', 'P', 'h')
 
 
 class MKappaAnalysis(BMCSModel):
@@ -150,7 +152,9 @@ class MKappaAnalysis(BMCSModel):
         Returns:
             (kappa_min, kappa_max): Curvature range [1/mm]
         """
-        h = self.cs.h_total
+        # Height of the PRIMARY concrete: additional regions above it (fill,
+        # top plate) must not shorten the sweep before the primary fails.
+        h = self.cs.y_top_primary
 
         # Get material strain limits
         eps_cu = abs(self.cs.concrete.eps_cu2_computed)  # Ultimate compressive strain (negative)
@@ -224,7 +228,9 @@ class MKappaAnalysis(BMCSModel):
             F_c, F_s, N_total, M_total = profile.get_force_resultants()
             return (N_total / 1000.0) - self.N_Ed  # N_total - N_Ed = 0
 
-        h = self.cs.h_total
+        # Bound on the PRIMARY concrete's own top fibre; region fibres above it
+        # may pass their own limits (their laws handle it, markers report it).
+        h = self.cs.y_top_primary
         eps_cu = abs(self.cs.concrete.eps_cu2_computed)
 
         # Lower bound: compressed fiber at concrete failure strain.
@@ -300,10 +306,12 @@ class MKappaAnalysis(BMCSModel):
         return E_s / E_c
 
     def _transformed_section_centroid(self) -> float:
-        """Neutral-axis position y_c from bottom [mm] of the uncracked transformed section."""
+        """Neutral-axis position y_c from bottom [mm] of the uncracked transformed section.
+
+        Matrix regions enter with n_r = E_r / E_c (``CrossSection.transformed_properties``).
+        """
         n = self._modular_ratio()
-        A_c = self.cs.shape.area
-        S_c = self.cs.shape.first_moment_of_area_bottom
+        A_c, S_c, _ = self.cs.transformed_properties()
         A_tr = sum((n - 1) * lay.A_s for lay in self.cs.reinforcement.layers)
         S_tr = sum((n - 1) * lay.A_s * lay.z for lay in self.cs.reinforcement.layers)
         return (S_c + S_tr) / (A_c + A_tr)
@@ -311,9 +319,7 @@ class MKappaAnalysis(BMCSModel):
     def _transformed_section_I(self, y_c: float) -> float:
         """Second moment of area I_g [mm⁴] of the transformed section about y_c."""
         n = self._modular_ratio()
-        A_c = self.cs.shape.area
-        S_c = self.cs.shape.first_moment_of_area_bottom
-        I_0 = self.cs.shape.second_moment_of_area_bottom
+        A_c, S_c, I_0 = self.cs.transformed_properties()
         # I about y_c via expansion: ∫b(z)(z-y_c)² dz = I_0 - 2·y_c·S_c + y_c²·A_c
         I_c_yc = I_0 - 2.0 * y_c * S_c + y_c ** 2 * A_c
         I_tr = sum((n - 1) * lay.A_s * (y_c - lay.z) ** 2
@@ -331,7 +337,7 @@ class MKappaAnalysis(BMCSModel):
         if f_ctm is None or E_c is None:
             return None
 
-        A_g = self.cs.shape.area
+        A_g = self.cs.transformed_properties()[0]
         sig_N = self.N_Ed * 1000.0 / A_g   # kN → N → MPa
         f_ctm_eff = f_ctm - sig_N           # tension N_Ed reduces cracking resistance
         if f_ctm_eff <= 0.0:
@@ -792,7 +798,8 @@ class MKappaAnalysis(BMCSModel):
         # heuristic pushes η above 1 due to solver step size.
         kappas  = self.kappa_values
         eps_bots = self.eps_bot_values
-        eps_tops = eps_bots - kappas * self.cs.h_total  # negative = compression
+        # top fibre of the PRIMARY concrete (regions report via get_component_limits)
+        eps_tops = eps_bots - kappas * self.cs.y_top_primary  # negative = compression
 
         within = (eps_bots <= eps_ud) & (np.abs(eps_tops) <= eps_cu)
         if within.any():
@@ -824,6 +831,89 @@ class MKappaAnalysis(BMCSModel):
             'eps_bot': float(eps_bot),
         }
 
+    def get_component_limits(self) -> list[dict]:
+        """Limit-strain crossings of every component on the positive-κ branch.
+
+        Each component — primary concrete, every matrix region (grouped by
+        label) and every reinforcement layer — has its own limit strain at its
+        critical fibre.  The sweep continues past a secondary component's limit
+        (its law softens / drops); this method reports where each limit is
+        first reached along the raw solver path.
+
+        Critical fibres (sagging): compression at the component's top fibre
+        (concrete: ``eps_cu2_computed``; steel: −eps_ud), tension at its bottom
+        fibre (materials with ``eps_ud``), reinforcement at the layer.
+
+        Returns:
+            list of dicts, sorted with the reached limits first (by κ):
+              'label', 'kind' ('compression' | 'tension'), 'y' [mm], 'eps_lim',
+              'reached' (bool), 'kappa_lim' [1/mm] (NaN if not reached),
+              'M_lim' [kN·m] (on the raw path), 'eta_peak' (|ε|/|ε_lim| at M-peak).
+            The first reached entry is the governing component.
+        """
+        kap, eb, M_raw = self.kappa_raw_values, self.eps_bot_raw_values, self.M_raw_values
+        if kap is None or len(kap) < 2:
+            return []
+        i_pk = int(np.argmax(M_raw))
+
+        checks = [('concrete', 'compression', self.cs.y_top_primary,
+                   float(self.cs.concrete.eps_cu2_computed))]
+        seen = set()
+        for reg in self.cs.regions:
+            if reg.label in seen:
+                continue
+            seen.add(reg.label)
+            group = [r for r in self.cs.regions if r.label == reg.label]
+            mat = reg.material
+            y_top = max(r.y_top for r in group)
+            y_bot = min(r.y_bot for r in group)
+            eps_ud = getattr(mat, 'eps_ud', None)
+            eps_cu = getattr(mat, 'eps_cu2_computed', None)
+            if eps_cu is None and eps_ud is not None:
+                eps_cu = -eps_ud
+            if eps_cu is not None:
+                checks.append((reg.label, 'compression', y_top, float(eps_cu)))
+            if eps_ud is not None:
+                checks.append((reg.label, 'tension', y_bot, float(eps_ud)))
+        layers = self.cs.reinforcement.layers
+        for i, lay in enumerate(layers):
+            eps_ud = getattr(lay.material, 'eps_ud', None)
+            if eps_ud is None:
+                eps_ud = getattr(lay.material, 'eps_cr', 0.025)
+            label = lay.name or ('reinforcement' if len(layers) == 1 else f'reinforcement {i + 1}')
+            checks.append((label, 'tension', float(lay.z), float(eps_ud)))
+
+        # The sweep ends when equilibrium is lost — typically because the next
+        # κ step would push the primary concrete past the solver bound.  A limit
+        # crossed within that one extrapolated step therefore counts as reached
+        # at the end of the path.
+        kap_x = np.append(kap, 2 * kap[-1] - kap[-2])
+        M_x = np.append(M_raw, M_raw[-1])
+        out = []
+        for label, kind, y, lim in checks:
+            eps = eb - kap * y
+            eps_x = np.append(eps, 2 * eps[-1] - eps[-2])
+            hit = eps_x <= lim if kind == 'compression' else eps_x >= lim
+            reached = bool(hit.any())
+            kappa_lim = M_lim = float('nan')
+            if reached:
+                j = int(np.argmax(hit))
+                if j == 0:
+                    kappa_lim, M_lim = float(kap_x[0]), float(M_x[0])
+                elif M_x[j] < 0.9 * M_x[j - 1]:
+                    # cliff (the component's law drops within the step): the limit
+                    # is the last state before the drop
+                    kappa_lim, M_lim = float(kap_x[j - 1]), float(M_x[j - 1])
+                else:
+                    t = (lim - eps_x[j - 1]) / (eps_x[j] - eps_x[j - 1])
+                    kappa_lim = float(kap_x[j - 1] + t * (kap_x[j] - kap_x[j - 1]))
+                    M_lim = float(M_x[j - 1] + t * (M_x[j] - M_x[j - 1]))
+            out.append(dict(label=label, kind=kind, y=float(y), eps_lim=lim, reached=reached,
+                            kappa_lim=kappa_lim, M_lim=M_lim,
+                            eta_peak=float(abs(eps[i_pk]) / abs(lim)) if lim else float('nan')))
+        out.sort(key=lambda d: (not d['reached'], d['kappa_lim'] if d['reached'] else 0.0))
+        return out
+
     def plot_mk(
         self,
         ax: Optional[plt.Axes] = None,
@@ -834,6 +924,7 @@ class MKappaAnalysis(BMCSModel):
         show_failure_marker: bool = False,
         show_full_range: bool = False,
         show_cracking_marker: bool = False,
+        show_component_markers: bool = False,
     ) -> plt.Axes:
         """
         Plot moment-curvature relationship.
@@ -853,6 +944,10 @@ class MKappaAnalysis(BMCSModel):
                 the positive-κ branch.  The two branches are drawn with the
                 same color and linewidth; only the positive-κ branch carries
                 the legend label.
+            show_component_markers: If True, mark where each component
+                (concrete, regions, reinforcement) first reaches its limit
+                strain — one labelled marker per component within the plotted
+                κ-range (see ``get_component_limits``).
 
         Returns:
             Matplotlib axes with plot
@@ -877,6 +972,9 @@ class MKappaAnalysis(BMCSModel):
             self._add_failure_marker(ax, color=color)
             if show_full_range and self.kappa_neg_values is not None and len(self.kappa_neg_values) > 0:
                 self._add_failure_marker_neg(ax, color=color)
+
+        if show_component_markers:
+            self._add_component_markers(ax, color=color)
 
         if show_cracking_marker:
             # Use analytically computed M_cr (= E_c·I_g·κ_cr), not solver interpolation.
@@ -927,6 +1025,41 @@ class MKappaAnalysis(BMCSModel):
             linestyle='none',
             zorder=5,
         )
+
+    def _add_component_markers(self, ax: plt.Axes, color: str = "#1f77b4") -> None:
+        """One labelled marker per component limit reached on the positive branch.
+
+        Limits beyond the plotted (non-descending, peak-truncated) curve sit on
+        the raw post-peak path, which is drawn as a thin dashed continuation.
+        """
+        if self.kappa_values is None or len(self.kappa_values) == 0:
+            return
+        k_end = float(self.kappa_values[-1])
+        kap_raw, M_raw = self.kappa_raw_values, self.M_raw_values
+        if kap_raw is not None and len(kap_raw) and float(kap_raw[-1]) > k_end:
+            tail = kap_raw >= k_end
+            ax.plot(kap_raw[tail] * 1000.0, M_raw[tail], color=color, lw=1.0, ls='--',
+                    alpha=0.7, zorder=2)
+        region_styles = iter(_REGION_MARKERS * 3)
+        for lim in self.get_component_limits():
+            if not lim['reached']:
+                continue
+            if lim['label'] == 'concrete':
+                mstyle = _FAILURE_MODE_MARKERS['concrete'][0]
+            elif lim['label'].startswith('reinforcement'):
+                mstyle = _FAILURE_MODE_MARKERS['reinforcement'][0]
+            else:
+                mstyle = next(region_styles)
+            k = lim['kappa_lim']
+            if k <= k_end:
+                M = float(np.interp(k, self.kappa_values, self.M_values))
+            elif kap_raw is not None and k <= float(kap_raw[-1]):
+                M = lim['M_lim']
+            else:                      # within the extrapolated last step → path end
+                k, M = float(kap_raw[-1]), float(M_raw[-1])
+            ax.plot(k * 1000.0, M, marker=mstyle, markersize=10, color=color,
+                    markeredgewidth=2.0, markerfacecolor='white', linestyle='none', zorder=5,
+                    label=f"{lim['label']} limit ({lim['kind']})")
 
     def _add_failure_marker_neg(
         self,
