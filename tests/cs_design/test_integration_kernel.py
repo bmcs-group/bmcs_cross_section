@@ -170,6 +170,22 @@ def test_legacy_quadrature_reproduces_former_rule():
         assert res.components[0].M == pytest.approx(M_c, rel=1e-12)
 
 
+def test_sketch_draws_regions_on_the_envelope():
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    conc = EC2ParabolaRectangle(f_ck=30.0)
+    cs = _filled_invt(conc, extra_top=60.0, plate=40.0)
+    fig, ax = plt.subplots()
+    n0 = len(ax.patches)
+    cs.plot_cross_section(ax=ax)
+    # primary polygon + fill (2 halves + 1 band) + top plate + 1 layer circle
+    assert len(ax.patches) - n0 == 6
+    assert ax.get_ylim()[1] > cs.h_total
+    assert any(t.get_text() == f'h={cs.h_total:.0f}' for t in ax.texts)
+    plt.close(fig)
+
+
 def test_steel_band_region_smoke():
     """A steel plate glued under a rectangle (compound section capability)."""
     conc = EC2ParabolaRectangle(f_ck=30.0, alpha_cc=1.0, gamma_c=1.0)

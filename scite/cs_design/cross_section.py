@@ -618,6 +618,7 @@ class CrossSection(BMCSModel):
             show_layer_labels=show_layer_labels,
             show_material_box=show_material_box,
             title=title,
+            regions=self.regions,
         )
 
     @staticmethod
@@ -632,6 +633,7 @@ class CrossSection(BMCSModel):
         show_layer_labels: bool = True,
         show_material_box: bool = False,
         title: str = '',
+        regions=(),
     ) -> None:
         """Canonical cross-section sketch renderer.
 
@@ -678,20 +680,39 @@ class CrossSection(BMCSModel):
             ))
             cx = b / 2.0
 
-        # ── T-section: web-edge dashes + b_w label ────────────────────────────
+        # ── Additional matrix regions (fill, top plate, …) ────────────────────
+        x_lo, x_hi, y_lo = 0.0, b, 0.0
+        for reg in regions:
+            face = reg.color or REGION_COLOR
+            for poly in reg.get_boundary_polygons():
+                pts = poly + np.array([cx, 0.0])
+                ax.add_patch(mpatches.Polygon(
+                    pts, closed=True, linewidth=0.9, edgecolor='#555', facecolor=face,
+                    alpha=0.55, hatch='//' if reg.color is None else None, zorder=0.9,
+                ))
+                x_lo, x_hi = min(x_lo, pts[:, 0].min()), max(x_hi, pts[:, 0].max())
+            y_lo = min(y_lo, reg.y_bot)
+            h = max(h, reg.y_top)
+        h_span = h - y_lo
+
+        # ── T-like sections: web-edge dashes + b_w label ──────────────────────
+        # The web / flange spans come from the shape, so an inverted T (web on
+        # top) or an I-shape is marked at the right height.
         if is_t and show_beff_dashes:
             b_w   = float(shape.b_w)
             h_w   = float(shape.h_w)
             h_f   = float(shape.h_f)
+            y_w0, y_w1 = getattr(shape, 'web_span', (0.0, h_w))
+            y_f0, y_f1 = getattr(shape, 'flange_span', (h_w, h_w + h_f))
             x_wl  = (b - b_w) / 2.0
             x_wr  = (b + b_w) / 2.0
             for xv in (x_wl, x_wr):
-                ax.plot([xv, xv], [0, h_w], color='#555', ls='--', lw=0.9,
+                ax.plot([xv, xv], [y_w0, y_w1], color='#555', ls='--', lw=0.9,
                         alpha=0.7, zorder=2)
-            y_bw = h_w + h_f * 0.45
+            y_bw = y_f0 + (y_f1 - y_f0) * 0.45
             ax.annotate('', xy=(x_wr, y_bw), xytext=(x_wl, y_bw),
                         arrowprops=dict(arrowstyle='<->', color='#555', lw=0.8))
-            ax.text(cx, h_w + h_f * 0.75, f'bw={b_w:.0f}',
+            ax.text(cx, y_f0 + (y_f1 - y_f0) * 0.75, f'bw={b_w:.0f}',
                     ha='center', va='bottom', fontsize=6, color='#555')
 
         # ── Reinforcement circles ─────────────────────────────────────────────
@@ -708,7 +729,7 @@ class CrossSection(BMCSModel):
                         va='center', fontsize=6, color='black')
 
         # ── Neutral axis ──────────────────────────────────────────────────────
-        if show_neutral_axis is not None and 0.0 < show_neutral_axis < h:
+        if show_neutral_axis is not None and y_lo < show_neutral_axis < h:
             ax.axhline(y=show_neutral_axis, color='red', ls='--', lw=1.2, alpha=0.85)
             ax.text(b * 1.02, show_neutral_axis,
                     f'z_na={show_neutral_axis:.0f}', va='bottom', fontsize=6, color='red')
@@ -729,18 +750,20 @@ class CrossSection(BMCSModel):
         if show_dimensions:
             b_label = f'b_eff={b:.0f}' if is_t else f'b={b:.0f}'
             # b-arrow: below section (tripled gap)
-            ax.annotate('', xy=(b, -h * 0.15), xytext=(0, -h * 0.15),
+            y_b = y_lo - h_span * 0.15
+            ax.annotate('', xy=(b, y_b), xytext=(0, y_b),
                         arrowprops=dict(arrowstyle='<->', color='black', lw=1.0))
-            ax.text(b / 2, -h * 0.22, b_label, ha='center', va='top', fontsize=9)
-            # h-arrow: to the left of section (tripled gap)
-            ax.annotate('', xy=(-b * 0.3, h), xytext=(-b * 0.3, 0),
+            ax.text(b / 2, y_lo - h_span * 0.22, b_label, ha='center', va='top', fontsize=9)
+            # h-arrow: to the left of section (tripled gap) — envelope height
+            x_h = x_lo - b * 0.3
+            ax.annotate('', xy=(x_h, h), xytext=(x_h, y_lo),
                         arrowprops=dict(arrowstyle='<->', color='black', lw=1.0))
-            ax.text(-b * 0.42, h / 2, f'h={h:.0f}',
+            ax.text(x_lo - b * 0.42, y_lo + h_span / 2, f'h={h_span:.0f}',
                     ha='center', va='center', fontsize=9, rotation=90)
 
         # ── Axes formatting ───────────────────────────────────────────────────
-        ax.set_xlim(-b * 0.55, b * 1.5)
-        ax.set_ylim(-h * 0.40, h * 1.15)
+        ax.set_xlim(x_lo - b * 0.55, x_hi + b * 0.5)
+        ax.set_ylim(y_lo - h_span * 0.40, h + h_span * 0.15)
         ax.set_aspect('equal', adjustable='datalim')
         ax.axis('off')
         if title:
