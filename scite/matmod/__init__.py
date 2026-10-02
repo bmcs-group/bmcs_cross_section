@@ -5,6 +5,7 @@ This module provides material constitutive models for:
 - Concrete (EC2-based models)
 - Steel reinforcement (bilinear elastic-plastic)
 - Carbon FRP reinforcement (linear elastic-brittle)
+- Foam concrete / lightweight fill (compression-only, low stiffness)
 
 Modern API (Pydantic-based):
 - EC2Concrete: Modern concrete model (ec2_concrete.py)
@@ -21,12 +22,14 @@ from .carbon_reinforcement import CarbonReinforcement, create_carbon
 # Modern Pydantic-based API
 from .ec2_concrete import EC2Concrete
 from .ec2_parabola_rectangle import EC2ParabolaRectangle
+from .foam_concrete import FoamConcrete
 from .steel_reinforcement import SteelReinforcement, create_steel
 
 __all__ = [
     # Modern Pydantic API
     'EC2Concrete',
     'EC2ParabolaRectangle',
+    'FoamConcrete',
     'SteelReinforcement',
     'CarbonReinforcement',
     'create_steel',
