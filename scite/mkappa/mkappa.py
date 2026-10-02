@@ -33,6 +33,9 @@ _FAILURE_MODE_MARKERS: dict[str, tuple[str, int, str]] = {
 }
 # Marker cycle for additional matrix regions in plot_mk(show_component_markers=True)
 _REGION_MARKERS: tuple[str, ...] = ('s', '^', 'v', 'P', 'h')
+# The solver keeps reinforcement strains below this fraction of eps_ud; reaching
+# it is the reinforcement failure (also used by get_component_limits).
+_REINF_BOUND = 0.99
 
 
 class MKappaAnalysis(BMCSModel):
@@ -208,14 +211,25 @@ class MKappaAnalysis(BMCSModel):
         kappa_min_hog = kappa_max_hog * 0.001
         return kappa_min_hog, kappa_max_hog
 
-    def solve_equilibrium_at_kappa(self, kappa: float) -> Tuple[float, float, float, bool]:
+    def solve_equilibrium_at_kappa(
+        self, kappa: float, eps_bot_guess: Optional[float] = None,
+    ) -> Tuple[float, float, float, bool]:
         """
         Solve for ε_bot that gives N ≈ N_Ed at specified curvature.
 
         Uses Brent's method to find root of N(ε_bot) - N_Ed = 0.
 
+        Composite sections (``cs.regions``): once a component's law has dropped
+        (crushed top plate, softened fill), N(ε_bot) is no longer monotonic — a
+        strain profile shifted towards tension can "revive" the dropped
+        component and give a second, path-inconsistent root.  With
+        ``eps_bot_guess`` (the previous step's solution) the residual is scanned
+        and the root nearest the guess is taken — path following for the
+        total-strain laws.  Plain sections keep the single global bracket.
+
         Args:
             kappa: Curvature [1/mm]
+            eps_bot_guess: Previous ε_bot on the path (used for composite sections)
 
         Returns:
             (eps_bot, N, M, converged): Bottom strain, axial force [kN], moment [kN·m], convergence flag
@@ -252,7 +266,35 @@ class MKappaAnalysis(BMCSModel):
         eps_bot_max = 0.100   # start high; reduced by layer constraints below
         for layer in self.cs.reinforcement.layers:
             eps_ud_layer = getattr(layer.material, 'eps_ud', 0.025)
-            eps_bot_max = min(eps_bot_max, 0.99 * eps_ud_layer + kappa * layer.z)
+            eps_bot_max = min(eps_bot_max, _REINF_BOUND * eps_ud_layer + kappa * layer.z)
+
+        # Composite sections: narrow the bracket to the sign change nearest the
+        # predicted solution (several roots once a component's law has dropped).
+        if eps_bot_guess is not None and self.cs.regions and eps_bot_max > eps_bot_min:
+            if eps_bot_guess > eps_bot_max:
+                # The path continues through the reinforcement limit: rupture.
+                # Do not jump to another root (e.g. a crushed top plate with the
+                # reinforcement unloaded) — report no equilibrium, as for a plain
+                # section whose reinforcement bound is reached.
+                profile.set_state(kappa=kappa, eps_bot=eps_bot_max)
+                F_c, F_s, N_total, M_total = profile.get_force_resultants()
+                N_kN = float(N_total / 1000.0) - self.N_Ed
+                N_fail = N_kN if abs(N_kN) > self.N_tol * 100.0 else np.sign(N_kN or -1.0) * 1e3
+                return float(eps_bot_max), float(N_fail + self.N_Ed), float(M_total / 1e6), False
+            # cheap first: a sign change in a narrow window around the prediction
+            # is the continuation of the current branch
+            d = 5e-4
+            lo, hi = max(eps_bot_min, eps_bot_guess - d), min(eps_bot_max, eps_bot_guess + d)
+            if hi > lo and residual(lo) * residual(hi) <= 0:
+                eps_bot_min, eps_bot_max = lo, hi
+            else:
+                grid = np.linspace(eps_bot_min, eps_bot_max, 25)
+                vals = np.array([residual(e) for e in grid])
+                cross = np.where(np.sign(vals[:-1]) * np.sign(vals[1:]) <= 0)[0]
+                if len(cross) > 1:
+                    mids = 0.5 * (grid[cross] + grid[cross + 1])
+                    j = int(cross[np.argmin(np.abs(mids - eps_bot_guess))])
+                    eps_bot_min, eps_bot_max = float(grid[j]), float(grid[j + 1])
 
         # Check if residual has opposite signs at bounds (required for brentq)
         r_min = residual(eps_bot_min)
@@ -388,6 +430,14 @@ class MKappaAnalysis(BMCSModel):
         # and still iterate over exactly n_kappa post-cracking solver steps
         return np.linspace(kappa_cr, kappa_max, self.n_kappa + 1)
 
+    @staticmethod
+    def _predict_eps_bot(kappa_list: list, eps_bot_list: list, kappa: float) -> float:
+        """Linear extrapolation of ε_bot along the path to the next κ (path following)."""
+        if len(kappa_list) >= 2 and kappa_list[-1] != kappa_list[-2]:
+            slope = (eps_bot_list[-1] - eps_bot_list[-2]) / (kappa_list[-1] - kappa_list[-2])
+            return float(eps_bot_list[-1] + slope * (kappa - kappa_list[-1]))
+        return float(eps_bot_list[-1])
+
     def solve(self) -> None:
         """
         Compute the complete M-κ relationship under constant axial force N_Ed.
@@ -434,7 +484,8 @@ class MKappaAnalysis(BMCSModel):
             M_peak_reached = False
 
             for i, kappa in enumerate(kappa_array):
-                eps_bot, N, M, converged = self.solve_equilibrium_at_kappa(kappa)
+                eps_bot, N, M, converged = self.solve_equilibrium_at_kappa(
+                    kappa, eps_bot_guess=self._predict_eps_bot(kappa_list, eps_bot_list, kappa))
 
                 if abs(N) > self.N_tol * tolerance_multiplier:
                     n_failed += 1
@@ -528,7 +579,8 @@ class MKappaAnalysis(BMCSModel):
         M_peak_neg_reached = False
 
         for kappa in kappa_neg_array:
-            eps_bot, N, M, converged = self.solve_equilibrium_at_kappa(kappa)
+            eps_bot, N, M, converged = self.solve_equilibrium_at_kappa(
+                kappa, eps_bot_guess=self._predict_eps_bot(kappa_neg_list, eps_bot_neg_list, kappa))
 
             if abs(N) > self.N_tol * tolerance_multiplier:
                 n_failed_neg += 1
@@ -882,6 +934,7 @@ class MKappaAnalysis(BMCSModel):
                 eps_ud = getattr(lay.material, 'eps_cr', 0.025)
             label = lay.name or ('reinforcement' if len(layers) == 1 else f'reinforcement {i + 1}')
             checks.append((label, 'tension', float(lay.z), float(eps_ud)))
+        n_reinf = len(layers)
 
         # The sweep ends when equilibrium is lost — typically because the next
         # κ step would push the primary concrete past the solver bound.  A limit
@@ -890,10 +943,12 @@ class MKappaAnalysis(BMCSModel):
         kap_x = np.append(kap, 2 * kap[-1] - kap[-2])
         M_x = np.append(M_raw, M_raw[-1])
         out = []
-        for label, kind, y, lim in checks:
+        for n, (label, kind, y, lim) in enumerate(checks):
             eps = eb - kap * y
             eps_x = np.append(eps, 2 * eps[-1] - eps[-2])
-            hit = eps_x <= lim if kind == 'compression' else eps_x >= lim
+            # reinforcement layers fail at the solver bound _REINF_BOUND·eps_ud
+            lim_hit = lim * _REINF_BOUND if n >= len(checks) - n_reinf else lim
+            hit = eps_x <= lim_hit if kind == 'compression' else eps_x >= lim_hit
             reached = bool(hit.any())
             kappa_lim = M_lim = float('nan')
             if reached:
@@ -905,7 +960,7 @@ class MKappaAnalysis(BMCSModel):
                     # is the last state before the drop
                     kappa_lim, M_lim = float(kap_x[j - 1]), float(M_x[j - 1])
                 else:
-                    t = (lim - eps_x[j - 1]) / (eps_x[j] - eps_x[j - 1])
+                    t = (lim_hit - eps_x[j - 1]) / (eps_x[j] - eps_x[j - 1])
                     kappa_lim = float(kap_x[j - 1] + t * (kap_x[j] - kap_x[j - 1]))
                     M_lim = float(M_x[j - 1] + t * (M_x[j] - M_x[j - 1]))
             out.append(dict(label=label, kind=kind, y=float(y), eps_lim=lim, reached=reached,

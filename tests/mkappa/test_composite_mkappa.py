@@ -97,20 +97,50 @@ def test_soft_foam_reaches_its_limit_first_and_sweep_continues():
     assert np.max(mk.M_values) > float(np.interp(k_fill, mk.kappa_values, mk.M_values))
 
 
-def test_top_plate_envelope_bound_and_marker():
-    """§7.6: the envelope grows, the solver bound stays on the primary top fibre."""
+def test_top_plate_envelope_bound_and_path_following():
+    """§7.6: the envelope grows, the solver bound stays on the primary top fibre.
+
+    A strong top plate keeps the neutral axis high; the reinforcement governs.
+    Regression: N(ε_bot) has a second root once the plate could be crushed
+    (plate crushed + CFRP unloaded) — the sweep must not jump to it when the
+    CFRP reaches its limit, but stop there (rupture), as a plain section does.
+    """
     cs = _pi(FoamConcrete(f_c=2.0, E=1250.0, gamma=1.0), above=60.0, plate=40.0)
     assert cs.h_total == pytest.approx(H_T + 100.0)
     assert cs.y_top_primary == pytest.approx(H_T)
     mk = _solve(cs)
     eps_top_primary = mk.eps_bot_raw_values - mk.kappa_raw_values * H_T
     assert np.min(eps_top_primary) >= CONC.eps_cu2_computed - 1e-6
-    plate = _by_label(mk.get_component_limits())[('top plate', 'compression')]
-    assert plate['reached']
-    assert mk.kappa_raw_values[-1] > plate['kappa_lim']
-    # plate crushing is a cliff of the parabola-rectangle law: the limit is the
-    # last state before the drop — here the peak of the curve
+    M = mk.M_raw_values
+    assert np.all(np.diff(M[2:]) > 0.0), "no jump to the crushed-plate / unloaded-CFRP root"
+    limits = mk.get_component_limits()
+    assert limits[0]['label'] == 'reinforcement' and limits[0]['reached']
+    assert limits[0]['M_lim'] == pytest.approx(np.max(mk.M_values))
+    plate = _by_label(limits)[('top plate', 'compression')]
+    assert not plate['reached'] and plate['eta_peak'] < 0.6
+
+
+def test_genuine_top_plate_crushing_is_followed():
+    """A thin weak plate over heavy reinforcement crushes first: the limit is the
+    peak (cliff of the parabola-rectangle law) and the sweep continues on the
+    crushed branch to the concrete limit of the inverted T."""
+    lay = ReinforcementLayout(layers=[ReinforcementLayer(
+        z=20.0, A_s=600.0, material=CarbonReinforcement(E=210_000.0, f_t=3000.0))])
+    foam = FoamConcrete(f_c=2.0, E=1250.0, gamma=1.0)
+    regs = [MatrixRegion(shape=BandShape(y0=H_F, y1=H_T, b=B_F - B_W, gap=B_W),
+                         material=foam, label='ballast'),
+            MatrixRegion(shape=BandShape(y0=H_T, y1=H_T + 60.0, b=B_F),
+                         material=foam, label='ballast'),
+            MatrixRegion(shape=BandShape(y0=H_T + 60.0, y1=H_T + 80.0, b=B_F),
+                         material=EC2ParabolaRectangle(f_ck=12.0, alpha_cc=1.0, gamma_c=1.0),
+                         label='top plate')]
+    mk = _solve(CrossSection(shape=InvTShape(b_f=B_F, h_f=H_F, b_w=B_W, h_w=H_W),
+                             concrete=CONC, reinforcement=lay, regions=regs))
+    limits = mk.get_component_limits()
+    assert [d['label'] for d in limits if d['reached']] == ['top plate', 'concrete']
+    plate = limits[0]
     assert plate['M_lim'] == pytest.approx(np.max(mk.M_values))
+    assert mk.kappa_raw_values[-1] > 1.2 * plate['kappa_lim']
 
 
 def test_component_markers_are_plotted():
