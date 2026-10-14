@@ -324,7 +324,7 @@ class MKappaAnalysis(BMCSModel):
 
             # Additional check: if residual is still large, mark as not converged
             N_kN = float(N_total / 1000.0)
-            if abs(N_kN) > self.N_tol * 10:  # 10x tolerance threshold
+            if abs(N_kN - self.N_Ed) > self.N_tol * 10:  # residual N − N_Ed, 10x tolerance
                 converged = False
 
             return float(eps_bot_sol), N_kN, float(M_total / 1e6), converged
@@ -465,7 +465,7 @@ class MKappaAnalysis(BMCSModel):
             kappa_list: list = [0.0]
             eps_bot_list: list = [0.0]
             M_list: list = [0.0]
-            N_list: list = [0.0]
+            N_list: list = [self.N_Ed]
 
             # Inject cracking point (κ_cr, M_cr) analytically — model-agnostic.
             # EC2ParabolaRectangle has no tensile concrete, so the solver would return
@@ -476,7 +476,7 @@ class MKappaAnalysis(BMCSModel):
                 kappa_list.append(self.kappa_cr_pos)
                 eps_bot_list.append(float(eps_cr))   # bottom fibre at cracking = ε_cr
                 M_list.append(self.M_cr_pos)
-                N_list.append(0.0)
+                N_list.append(self.N_Ed)
                 kappa_array = kappa_array[1:]        # kappa_cr already injected; skip it
 
             n_failed = 0
@@ -487,7 +487,7 @@ class MKappaAnalysis(BMCSModel):
                 eps_bot, N, M, converged = self.solve_equilibrium_at_kappa(
                     kappa, eps_bot_guess=self._predict_eps_bot(kappa_list, eps_bot_list, kappa))
 
-                if abs(N) > self.N_tol * tolerance_multiplier:
+                if abs(N - self.N_Ed) > self.N_tol * tolerance_multiplier:
                     n_failed += 1
                     if n_failed >= failure_threshold and M_peak_reached:
                         print(
@@ -559,7 +559,7 @@ class MKappaAnalysis(BMCSModel):
         kappa_neg_list: list = [0.0]
         eps_bot_neg_list: list = [0.0]
         M_neg_list: list = [0.0]
-        N_neg_list: list = [0.0]
+        N_neg_list: list = [self.N_Ed]
 
         # Inject cracking point (−κ_cr, M_cr_neg) analytically
         if self.kappa_cr_neg is not None and self.M_cr_neg is not None:
@@ -571,7 +571,7 @@ class MKappaAnalysis(BMCSModel):
             kappa_neg_list.append(-self.kappa_cr_neg)
             eps_bot_neg_list.append(eps_bot_cr_neg)
             M_neg_list.append(self.M_cr_neg)
-            N_neg_list.append(0.0)
+            N_neg_list.append(self.N_Ed)
             kappa_neg_array = kappa_neg_array[1:]   # kappa_cr already injected; skip it
 
         n_failed_neg = 0
@@ -582,7 +582,7 @@ class MKappaAnalysis(BMCSModel):
             eps_bot, N, M, converged = self.solve_equilibrium_at_kappa(
                 kappa, eps_bot_guess=self._predict_eps_bot(kappa_neg_list, eps_bot_neg_list, kappa))
 
-            if abs(N) > self.N_tol * tolerance_multiplier:
+            if abs(N - self.N_Ed) > self.N_tol * tolerance_multiplier:
                 n_failed_neg += 1
                 if n_failed_neg >= failure_threshold and M_peak_neg_reached:
                     print(
