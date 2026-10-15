@@ -1,0 +1,44 @@
+@startuml
+
+package CrossSection{
+class CSDesign{
+}
+
+class CSShape{
+}
+
+class RectangularShape{
+}
+
+class TShape{
+}
+
+RectangularShape --|> CSShape
+TShape --|> CSShape
+
+class ReinfLayout{
+
+}
+
+ReinfLayout o--> Reinf
+
+class Reinf{
+ float position
+}
+class BarReinf{
+}
+class FabricReinf{
+}
+
+BarReinf --|> Reinf
+FabricReinf --|> Reinf
+
+CSDesign --> CSShape
+CSDesign --> ReinfLayout
+
+Reinf --> ReinfMaterial: reinf_material >
+
+CSDesign --> ConcreteMixture : matrix_matmod
+}
+
+@enduml

@@ -1,0 +1,40 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Kill Streamlit Apps",
+            "type": "shell",
+            "command": "pkill -f 'streamlit run.*_app.py' || true",
+            "presentation": {
+                "reveal": "silent",
+                "panel": "shared"
+            }
+        },
+        {
+            "label": "Run Streamlit App",
+            "type": "shell",
+            "command": "streamlit run ${file}",
+            "isBackground": true,
+            "problemMatcher": [],
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated",
+                "focus": false
+            },
+            "dependsOn": ["Kill Streamlit Apps"]
+        },
+        {
+            "label": "Run Component Catalog App",
+            "type": "shell",
+            "command": "cd ${workspaceFolder}/notebooks/dev && streamlit run component_catalog_app.py",
+            "isBackground": true,
+            "problemMatcher": [],
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated",
+                "focus": false
+            },
+            "dependsOn": ["Kill Streamlit Apps"]
+        }
+    ]
+}

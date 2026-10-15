@@ -1,0 +1,30 @@
+@startuml
+'https://plantuml.com/sequence-diagram
+
+
+abstract class MatMod
+
+package ConcreteMatMod{
+class ConcreteMatMod
+ConcreteMatMod --|> MatMod
+ElasticConcreteMatMod --|> ConcreteMatMod
+EC2ConcreteMatMod --|> ConcreteMatMod
+PWLConcreteMatMod --|> ConcreteMatMod
+}
+package ReinfMatMod{
+class ReinfMatMod
+ReinfMatMod --|> MatMod
+SteelMatMod --|> ReinfMatMod
+CarbonMatMod --|> ReinfMatMod
+}
+
+package BondMatMod{
+class BondMatMod
+BondMatMod --|> MatMod
+MultilinearBondMatMod --|> BondMatMod
+DamageBondMatMod --|> BondMatMod
+PlasticBondMatMod --|> BondMatMod
+DamagePlasticBondMatMod --|> BondMatMod
+}
+
+@enduml

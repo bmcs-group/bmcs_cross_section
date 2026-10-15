@@ -1,0 +1,1557 @@
+"""
+scite.beam.continuous.continuous_beam
+======================================
+
+ContinuousBeamAnalysis — two-span nonlinear continuous beam solved by
+rotation compatibility at the interior support.
+
+Algorithm
+---------
+Each span is treated as an independent simply supported beam (SSB).  The
+unknown hogging moment M_hog ≤ 0 at the interior support is determined by
+requiring equal end-rotations from the two spans:
+
+    φ_a(L_a; M_hog) = φ_b(0; M_hog)   →   residuum R = φ_L − φ_R = 0
+
+End-rotations are computed via numerical integration of the M-κ curve with the
+SSB displacement BC w(0) = w(L) = 0.  The brentq solver finds the root.
+
+Sign convention (sagging positive, hogging negative — consistent with M-κ)
+---------------------------------------------------------------------------
+- M > 0 → sagging (tension at bottom).   κ > 0 → sagging.
+- M < 0 → hogging (tension at top).      κ < 0 → hogging.
+- M_hog ≤ 0 is the *signed* interior support moment.
+- κ_hog ≤ 0 is the *signed* support curvature.
+- φ = −dw/dx with w downward positive → φ > 0 means slope points upward.
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass
+from functools import cached_property
+from typing import Callable, Optional, Tuple
+
+import matplotlib.pyplot as plt
+import numpy as np
+from scipy.integrate import cumulative_trapezoid as cumtrapz
+from scipy.optimize import brentq
+
+from scite.beam.bending.beam_deflection import BeamDeflectionAnalysis
+
+
+def _M_sag_max(
+    q_arr: np.ndarray,
+    M_hog_kNm: np.ndarray,
+    L: float,
+) -> np.ndarray:
+    """Max sagging moment [kN·m] for a SSB with end moment M_hog [kN·m] and UDL q [N/mm]."""
+    M_Nmm  = np.asarray(M_hog_kNm) * 1e6   # signed, ≤ 0
+    q_a    = np.asarray(q_arr)
+    x_star = np.clip(L / 2 + M_Nmm / (q_a * L), 0.0, L)
+    return (q_a * 0.5 * x_star * (L - x_star) + M_Nmm * (x_star / L)) / 1e6
+
+
+def _kappa_at_max_def(
+    span: "BeamDeflectionAnalysis",
+    q: float,
+    M_hog_Nmm: float,
+    end_side: str,
+) -> float:
+    """Curvature [1/mm] at the point of maximum deflection in a span.
+
+    Parameters
+    ----------
+    span      : BeamDeflectionAnalysis for the span
+    q         : distributed load [N/mm]
+    M_hog_Nmm : signed hogging moment at the interior support [N·mm] (≤ 0)
+    end_side  : ``'right'`` if the interior support is at x=L (left span),
+                ``'left'`` if it is at x=0 (right span)
+    """
+    x = span.x
+    if end_side == 'right':
+        M_x = span.get_M_x(q, M_end_right=M_hog_Nmm)
+    else:
+        M_x = span.get_M_x(q, M_end_left=M_hog_Nmm)
+    kappa_x = span.get_kappa_x_from_M(M_x)
+    phi_x   = _phi_ssb(kappa_x, x)
+    w_x     = -cumtrapz(phi_x, x, initial=0.0)
+    return float(kappa_x[int(np.argmax(w_x))])
+
+
+class CompatibilityNoRoot(Exception):
+    """Raised when no root exists in the admissible κ_hog domain.
+
+    This occurs when q ≥ q_u (failure load): the rotation-compatibility
+    equation has no solution with |κ_hog| ≤ κ_{R,hog}.  The outer q-loop
+    should catch this and interpret it as failure.
+    """
+
+    def __init__(self, q: float) -> None:
+        self.q = q
+        super().__init__(
+            f"No root in [κ_R_hog, 0] at q = {q:.4g} N/mm — capacity exceeded"
+        )
+
+# ── SSB rotation helper ───────────────────────────────────────────────────────
+
+def _phi_ssb(kappa_x: np.ndarray, x: np.ndarray) -> np.ndarray:
+    """Rotation profile φ(x) for a SSB using w(0) = w(L) = 0 BC.
+
+    The integration constant C1 is derived from ∫₀ᴸ φ dx = 0, which is
+    equivalent to zero displacement at both supports.
+    """
+    phi_int = cumtrapz(kappa_x, x, initial=0.0)
+    C1 = -np.trapezoid(phi_int, x) / (x[-1] - x[0])
+    return phi_int + C1
+
+
+# ── ContinuousBeamAnalysis ────────────────────────────────────────────────────
+
+@dataclass
+class ContinuousBeamAnalysis:
+    """Two-span nonlinear continuous beam via rotation-compatibility.
+
+    Parameters
+    ----------
+    span_left : BeamDeflectionAnalysis
+        Left span — M-κ integration engine with span length L_a [mm].
+    span_right : BeamDeflectionAnalysis
+        Right span — M-κ integration engine with span length L_b [mm].
+    q : float
+        Uniform distributed load intensity [N/mm = kN/m].
+    verbose : bool
+        If True, print solver trace during residuum evaluations.
+    """
+
+    span_left:  BeamDeflectionAnalysis
+    span_right: BeamDeflectionAnalysis
+    q:          float
+    verbose:    bool = False
+
+    # ── end-rotation helpers ──────────────────────────────────────────────────
+
+    def _end_phi(
+        self,
+        span: BeamDeflectionAnalysis,
+        M_end_left: float,
+        M_end_right: float,
+        end: str,
+    ) -> float:
+        """Return the end rotation of *span* at 'left' (x=0) or 'right' (x=L).
+
+        The moment distribution is the SSB under self.q plus the linear
+        end-moment correction.  κ(x) is obtained from the M-κ inverse.
+        M_end_left and M_end_right are signed [N·mm].
+        """
+        M_x     = span.get_M_x(self.q, M_end_left=M_end_left, M_end_right=M_end_right)
+        kappa_x = span.get_kappa_x_from_M(M_x)
+        phi_x   = _phi_ssb(kappa_x, span.x)
+        return float(phi_x[0] if end == 'left' else phi_x[-1])
+
+    # ── rotation-compatibility residuals (private) ────────────────────────────
+
+    def _residuum_M_hog(self, M_hog: float) -> float:
+        """R(M_hog) = φ_L(L_a) − φ_R(0); zero when rotation compatibility holds.
+
+        M_hog [N·mm] ≤ 0 (signed, hogging).  Passed directly as end-moment
+        to the left span's right end and the right span's left end.
+        """
+        phi_L = self._end_phi(self.span_left,  0.0,   M_hog, 'right')
+        phi_R = self._end_phi(self.span_right, M_hog,  0.0,  'left')
+        if self.verbose:
+            print(
+                f"  M_hog={M_hog / 1e6:8.3f} kN·m  "
+                f"φ_L={phi_L:+.6f}  φ_R={phi_R:+.6f}  R={phi_L - phi_R:+.2e}"
+            )
+        return phi_L - phi_R
+
+    # ── elastic estimate (three-moment equation) ─────────────────────────────
+
+    @property
+    def M_el_hog(self) -> float:
+        """Elastic hogging moment [N·mm] at interior support (≤ 0, signed).
+
+        Clapeyron's three-moment equation (uniform EI):
+
+            M_el_hog = − q (L_a³ + L_b³) / [8 (L_a + L_b)]
+
+        Reduces to −q L² / 8 for equal spans.
+        """
+        La = self.span_left.L
+        Lb = self.span_right.L
+        return -self.q * (La ** 3 + Lb ** 3) / (8.0 * (La + Lb))
+
+    # ── solver ────────────────────────────────────────────────────────────────
+
+    def solve_M_nl_hog(self, xtol: float = 1e-12) -> float:
+        """Return M_nl_hog [N·mm] ≤ 0 for the current q via the κ-controlled solver.
+
+        Uses solve_kappa_hog() for numerical robustness (avoids the M-κ inversion
+        at the interior support), then maps the result back through the forward map.
+
+        Raises
+        ------
+        CompatibilityNoRoot
+            When q ≥ q_u (failure load) and no admissible κ_hog exists.
+        """
+        return self._forward_map(self.solve_kappa_hog(xtol))
+
+    # ── κ-controlled solver (Strategy C) ─────────────────────────────────────
+
+    @property
+    def kappa_R_hog(self) -> float:
+        """Signed curvature [1/mm] at peak hogging moment (≤ 0).
+
+        Uses the independently solved hogging branch (kappa_neg_values) when
+        available (solve_mode='both'); otherwise mirrors the sagging branch peak
+        — valid for symmetric sections (equal top/bottom reinforcement).
+        """
+        mk = self.span_left.mk
+        if mk.kappa_neg_values is not None and len(mk.kappa_neg_values) > 0:
+            idx_peak = int(np.argmin(mk.M_neg_values))
+            return float(mk.kappa_neg_values[idx_peak])    # already negative
+        else:
+            idx_peak = int(np.argmax(mk.M_values))
+            return -float(mk.kappa_values[idx_peak])       # negate to make hogging negative
+
+    def _forward_map(self, kappa_hog: float) -> float:
+        """Map κ_hog [1/mm] (≤ 0, signed) → M_hog [N·mm] (≤ 0, signed).
+
+        Delegates to ``MKappaAnalysis.M_from_kappa``.
+        """
+        return float(self.span_left.mk.M_from_kappa(np.array([kappa_hog]))[0])
+
+    def _residuum_kappa_hog(self, kappa_hog: float) -> float:
+        """R(κ_hog) = φ_L(La) − φ_R(0) for κ_hog [1/mm] ≤ 0 (signed).
+
+        The hogging moment is obtained via the forward map M_hog = f(κ_hog),
+        then delegated to _residuum_M_hog().  No M-κ inversion at the support.
+        """
+        return self._residuum_M_hog(self._forward_map(kappa_hog))
+
+    def solve_kappa_hog(self, xtol: float = 1e-12) -> float:
+        """Return κ_hog [1/mm] ≤ 0 (signed) via brentq on the κ-controlled residual.
+
+        Bracket: [κ_{R,hog}, κ_eps] where both are negative and κ_R < κ_eps.
+        At κ_eps (near zero, tiny hogging): R > 0.
+        At κ_R (full hogging): R < 0.
+
+        Raises
+        ------
+        CompatibilityNoRoot
+            When R_lo * R_hi ≥ 0 (same sign at both bracket ends), meaning no
+            root exists and q ≥ q_u (failure load reached).
+        """
+        kappa_R   = self.kappa_R_hog               # negative, e.g. −0.049
+        kappa_eps = 1e-8 * kappa_R                 # tiny negative, near zero
+
+        R_at_kappa_R   = self._residuum_kappa_hog(kappa_R)    # expected < 0
+        R_at_kappa_eps = self._residuum_kappa_hog(kappa_eps)  # expected > 0
+
+        if R_at_kappa_R * R_at_kappa_eps >= 0:
+            raise CompatibilityNoRoot(self.q)
+
+        # brentq requires a < b: kappa_R < kappa_eps (both negative, kappa_R more negative)
+        return brentq(self._residuum_kappa_hog, kappa_R, kappa_eps, xtol=xtol)
+
+    # ── q-controlled solver (Strategy D) ─────────────────────────────────────
+    #
+    # κ_hog ≤ 0 is prescribed (stepped through the M-κ table); q is the inner
+    # brentq unknown.  R(q=0) < 0 is analytically guaranteed for M_hog < 0,
+    # so the bracket [0, q_hi] needs no pre-check sign test.
+
+    def _residuum_q(self, q: float, M_hog: float) -> float:
+        """R(q; M_hog) = φ_L(L_a) − φ_R(0) with M_hog [N·mm] ≤ 0 prescribed.
+
+        Uses a temporary instance with self.q replaced by *q* so that the
+        existing _residuum_M_hog() implementation is reused without modification.
+        """
+        from dataclasses import replace as _replace
+        return _replace(self, q=float(q))._residuum_M_hog(M_hog)
+
+    def solve_q_for_kappa_hog(self, kappa_hog: float) -> float:
+        """Return q [N/mm] satisfying rotation compatibility for prescribed κ_hog ≤ 0.
+
+        Bracket: [0, q_hi] where q_hi starts at 4 × the elastic estimate and
+        doubles up to 5 times if R(q_hi) is not yet positive.
+
+        Raises
+        ------
+        CompatibilityNoRoot
+            If the upper bracket cannot be established after 5 doublings.
+        """
+        M_hog = self._forward_map(kappa_hog)          # N·mm, negative
+        La, Lb = self.span_left.L, self.span_right.L
+        q_el = -8.0 * M_hog * (La + Lb) / (La ** 3 + Lb ** 3)   # positive (M_hog < 0)
+
+        q_hi = 4.0 * q_el
+        for _ in range(5):
+            if self._residuum_q(q_hi, M_hog) > 0:
+                break
+            q_hi *= 2.0
+        else:
+            raise CompatibilityNoRoot(q_hi)
+
+        tol = max(1e-6 * q_el, 1e-8)
+        return brentq(
+            lambda q: self._residuum_q(q, M_hog),
+            0.0,
+            q_hi,
+            xtol=tol,
+        )
+
+    def _sweep_kappa_hog(
+        self,
+        progress_cb: Optional[Callable[[float, str], None]] = None,
+    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Sweep κ_hog through the ascending hogging M-κ branch; find q for each.
+
+        The outer parameter steps through `mk.kappa_neg_values` (signed, ≤ 0)
+        or the sagging mirror for symmetric fallback.  The last entry corresponds
+        to κ_hog = κ_{R,hog} and gives the hogging-failure load q_hog_u directly.
+
+        Parameters
+        ----------
+        progress_cb : callable(fraction, label), optional
+            Called after each κ step with a progress fraction in [0, 1] and a
+            human-readable label string.  Used by ComputeNode to update a live
+            progress bar in the Streamlit UI.
+
+        Returns
+        -------
+        kappa_arr : [1/mm]   signed hogging curvatures (≤ 0, ascending in magnitude)
+        M_hog_arr : [kN·m]  signed hogging moments (≤ 0)
+        q_arr     : [N/mm]  compatible distributed loads (both spans, > 0)
+        """
+        mk = self.span_left.mk
+        if mk.kappa_neg_values is not None and len(mk.kappa_neg_values) > 0:
+            idx_peak    = int(np.argmin(mk.M_neg_values))
+            kappa_sweep = mk.kappa_neg_values[:idx_peak + 1]   # signed negative
+        else:
+            idx_peak    = int(np.argmax(mk.M_values))
+            kappa_sweep = -mk.kappa_values[:idx_peak + 1]       # negate to make hogging negative
+
+        # Drop the injected origin (κ=0, M=0) — solve_q_for_kappa_hog cannot
+        # bracket a root when M_hog=0 produces q_el=0 (IEEE-754 −0 loops forever).
+        kappa_sweep = kappa_sweep[kappa_sweep != 0.0]
+
+        n = len(kappa_sweep)
+        kappa_list: list[float] = []
+        M_hog_list: list[float] = []
+        q_list:     list[float] = []
+        for i, kappa_hog in enumerate(kappa_sweep):
+            kappa_hog = float(kappa_hog)
+            q         = self.solve_q_for_kappa_hog(kappa_hog)
+            kappa_list.append(kappa_hog)
+            M_hog_list.append(self._forward_map(kappa_hog) / 1e6)   # kN·m, negative
+            q_list.append(q)
+            if progress_cb is not None:
+                progress_cb((i + 1) / n, f"κ-sweep: step {i + 1} / {n}")
+
+        return np.array(kappa_list), np.array(M_hog_list), np.array(q_list)
+
+    # ── profile getters ───────────────────────────────────────────────────────
+
+    def M_profiles(
+        self, M_hog: float
+    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        """Moment profiles for the given M_hog [N·mm] ≤ 0 (signed, hogging).
+
+        M_hog is passed directly as the end-moment to both spans; the sign
+        convention is consistent with the M-κ curve (negative = hogging).
+
+        Returns
+        -------
+        x_a, M_a : coordinate and moment [N·mm] arrays for the left span
+        x_b, M_b : coordinate and moment [N·mm] arrays for the right span
+        """
+        M_a = self.span_left.get_M_x(self.q,  M_end_right=M_hog)
+        M_b = self.span_right.get_M_x(self.q, M_end_left=M_hog)
+        return self.span_left.x, M_a, self.span_right.x, M_b
+
+    def w_profiles(
+        self, M_hog: float
+    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        """Deflection profiles [mm] for the given M_hog [N·mm] ≤ 0 (downward positive).
+
+        Uses the nonlinear M-κ table to obtain curvature at each section.
+
+        Returns
+        -------
+        x_a, w_a, x_b, w_b : coordinate and deflection arrays per span
+        """
+        x_a, M_a, x_b, M_b = self.M_profiles(M_hog)
+
+        def _w(span: BeamDeflectionAnalysis, M_x: np.ndarray, x: np.ndarray) -> np.ndarray:
+            kappa_x = span.get_kappa_x_from_M(M_x)
+            phi_x   = _phi_ssb(kappa_x, x)
+            return -cumtrapz(phi_x, x, initial=0.0)   # w positive downward
+
+        return (
+            x_a, _w(self.span_left,  M_a, x_a),
+            x_b, _w(self.span_right, M_b, x_b),
+        )
+
+    def elastic_w_profiles(
+        self, M_hog: float
+    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        """True linear-elastic deflection profiles using κ = M / EI.
+
+        EI is estimated from a linear fit to the initial segment of the M-κ
+        table.  This avoids the non-zero lower bound of the M-κ sweep
+        (kappa_min = kappa_max × 0.001) that causes a step change in curvature
+        at the moment zero-crossing when the nonlinear table is used.
+
+        Returns
+        -------
+        x_a, w_a, x_b, w_b : coordinate and deflection arrays per span
+        """
+        x_a, M_a, x_b, M_b = self.M_profiles(M_hog)
+
+        def _EI(span: BeamDeflectionAnalysis) -> float:
+            return span.E_cm * span.I_g  # N·mm²
+
+        def _w(span: BeamDeflectionAnalysis, M_x: np.ndarray, x: np.ndarray) -> np.ndarray:
+            EI      = _EI(span)
+            kappa_x = M_x / EI          # linear-elastic curvature (signed)
+            phi_x   = _phi_ssb(kappa_x, x)
+            return -cumtrapz(phi_x, x, initial=0.0)
+
+        return (
+            x_a, _w(self.span_left,  M_a, x_a),
+            x_b, _w(self.span_right, M_b, x_b),
+        )
+
+    # ── κ-controlled sweep cache and plot methods ─────────────────────────────
+
+    def compute_sweep(
+        self,
+        progress_cb: Optional[Callable[[float, str], None]] = None,
+    ) -> dict:
+        """Run Strategy D and return the sweep dict.
+
+        This is the computation core, separated from the cached_property so
+        that a progress callback can be supplied (e.g. by ComputeNode for live
+        Streamlit progress bars).
+
+        Parameters
+        ----------
+        progress_cb : callable(fraction, label), optional
+            Passed through to ``_sweep_kappa_hog``.  Called after
+            each κ step with a progress fraction in [0, 1] and a label string.
+
+        Returns a dict with keys:
+          kappa_hog    [1/mm]  signed hogging curvatures (≤ 0, ascending magnitude)
+          M_nl_hog     [kN·m]  signed nonlinear hogging moments (≤ 0)
+          q            [N/mm]  compatible distributed loads (> 0)
+          M_el_hog     [kN·m]  elastic M_hog at each sweep step (≤ 0)
+          M_nl_sag_a   [kN·m]  max NL sagging moment in left span at each step
+          M_nl_sag_b   [kN·m]  max NL sagging moment in right span at each step
+          M_el_sag_a   [kN·m]  max elastic sagging in left span at each step
+          M_el_sag_b   [kN·m]  max elastic sagging in right span at each step
+          kappa_sag_a  [1/mm]  curvature at max-sagging-moment section, left span
+          kappa_sag_b  [1/mm]  curvature at max-sagging-moment section, right span
+          kappa_def_a  [1/mm]  curvature at max-deflection section, left span
+          kappa_def_b  [1/mm]  curvature at max-deflection section, right span
+          i_yield      int     first index where top reinforcement yields (len if no yield)
+          eps_yd       float   top-bar design yield strain (None if unavailable)
+        """
+        kappa_d, M_hog_d, q_d = self._sweep_kappa_hog(progress_cb)
+        La = self.span_left.L
+        Lb = self.span_right.L
+        mk = self.span_left.mk
+
+        M_hog_el_d = -q_d * (La ** 3 + Lb ** 3) / (8.0 * (La + Lb)) / 1e6  # [kN·m]
+
+        # Sagging moments from non-zero steps (avoids 0/0 at the origin).
+        M_nl_sag_a = _M_sag_max(q_d, M_hog_d, La)
+        M_nl_sag_b = _M_sag_max(q_d, M_hog_d, Lb)
+        M_el_sag_a = _M_sag_max(q_d, M_hog_el_d, La)
+        M_el_sag_b = _M_sag_max(q_d, M_hog_el_d, Lb)
+
+        # Curvature at max sagging moment — vectorized M-κ inversion.
+        mk_a = self.span_left.mk
+        mk_b = self.span_right.mk
+        kappa_sag_a = mk_a.kappa_from_M(M_nl_sag_a * 1e6)
+        kappa_sag_b = mk_b.kappa_from_M(M_nl_sag_b * 1e6)
+
+        # Curvature at max deflection — per-step integration of κ(x) → φ(x) → w(x).
+        M_hog_Nmm = M_hog_d * 1e6   # kN·m → N·mm
+        kappa_def_a = np.array([
+            _kappa_at_max_def(self.span_left,  float(q_i), float(mh_i), 'right')
+            for q_i, mh_i in zip(q_d, M_hog_Nmm)
+        ])
+        kappa_def_b = np.array([
+            _kappa_at_max_def(self.span_right, float(q_i), float(mh_i), 'left')
+            for q_i, mh_i in zip(q_d, M_hog_Nmm)
+        ])
+
+        # Yield detection — top fibre of the hogging section.
+        # kappa_d has n entries starting at the first non-zero κ (origin excluded);
+        # eps_bot_neg_values[0] is the injected origin so the aligned slice is [1:n+1].
+        n        = len(kappa_d)
+        eps_yd   = None
+        i_yield  = n + 1  # default: no yield (one past end of the prepended array)
+
+        if (
+            mk.eps_bot_neg_values is not None
+            and len(mk.eps_bot_neg_values) >= n + 1
+            and mk.cs.reinforcement.layers
+        ):
+            top_layer = max(mk.cs.reinforcement.layers, key=lambda lay: lay.z)
+            # eps_sy is the design yield strain on ReinforcementLayer
+            eps_yd    = float(getattr(top_layer, 'eps_sy',
+                              getattr(top_layer, 'eps_yd', None) or
+                              getattr(top_layer.material, 'eps_yd', 0.002174)))
+            h         = float(mk.cs.h_total)
+            eps_bot   = mk.eps_bot_neg_values[1:n + 1]   # skip origin at index 0
+            eps_top   = eps_bot - kappa_d * h   # top fibre (tension in hogging)
+            yield_mask = eps_top >= eps_yd
+            if yield_mask.any():
+                i_yield = int(np.argmax(yield_mask)) + 1  # +1: accounts for prepended origin
+
+        # Prepend the zero-load origin so all arrays start at (κ=0, q=0, M=0).
+        def _pre(arr: np.ndarray) -> np.ndarray:
+            return np.concatenate([[0.0], arr])
+
+        return dict(
+            kappa_hog   = _pre(kappa_d),
+            M_nl_hog    = _pre(M_hog_d),
+            q           = _pre(q_d),
+            M_el_hog    = _pre(M_hog_el_d),
+            M_nl_sag_a  = _pre(M_nl_sag_a),
+            M_nl_sag_b  = _pre(M_nl_sag_b),
+            M_el_sag_a  = _pre(M_el_sag_a),
+            M_el_sag_b  = _pre(M_el_sag_b),
+            kappa_sag_a = _pre(kappa_sag_a),
+            kappa_sag_b = _pre(kappa_sag_b),
+            kappa_def_a = _pre(kappa_def_a),
+            kappa_def_b = _pre(kappa_def_b),
+            i_yield     = i_yield,
+            eps_yd      = eps_yd,
+        )
+
+    @cached_property
+    def sweep(self) -> dict:
+        """Run the κ-controlled sweep once and cache the result (no progress callback).
+
+        For use in notebooks and scripts.  For Streamlit apps with a live
+        progress bar, call ``compute_sweep(progress_cb=…)`` directly.
+        """
+        return self.compute_sweep()
+
+    # ── Fast ultimate-state properties (no sweep required) ────────────────────
+    #
+    # These compute the state at κ_hog = κ_R_hog (hogging section at capacity)
+    # via a single call to solve_q_for_kappa_hog.  Consistent with the last
+    # entry of the sweep dict but much cheaper for callers who only need the
+    # ultimate value.
+
+    @cached_property
+    def q_hog_u(self) -> float:
+        """Ultimate load [N/mm] from hogging section failure (κ_hog = κ_R_hog)."""
+        return self.solve_q_for_kappa_hog(self.kappa_R_hog)
+
+    @cached_property
+    def M_nl_hog_u(self) -> float:
+        """Nonlinear hogging moment at q_hog_u [kN·m], signed ≤ 0."""
+        return self._forward_map(self.kappa_R_hog) / 1e6
+
+    @cached_property
+    def M_el_hog_u(self) -> float:
+        """Elastic hogging moment at q_hog_u [kN·m], signed ≤ 0."""
+        La, Lb = self.span_left.L, self.span_right.L
+        return -self.q_hog_u * (La ** 3 + Lb ** 3) / (8.0 * (La + Lb)) / 1e6
+
+    @cached_property
+    def delta_M_u(self) -> float:
+        """Moment redistribution factor at hogging-governed ultimate state.
+
+        δ_M = |M_nl_hog_u| / |M_el_hog_u|
+
+        Valid when hogging governs (the common design case).  For asymmetric
+        designs where sagging may govern first, check failure_mode_u.
+        """
+        return abs(self.M_nl_hog_u) / abs(self.M_el_hog_u)
+
+    # ── Sweep-based ultimate-state properties (governing failure) ─────────────
+    #
+    # q_u is the true governing failure load across all three potential failure
+    # sections (hog, sag_a, sag_b).  These require the full sweep because the
+    # sagging moment history is only available from the sweep dict.
+
+    @cached_property
+    def q_sag_a_u(self) -> float:
+        """Ultimate load [N/mm] from left span sagging failure; np.inf if not reached."""
+        M_R = self.span_left.M_R       # kN·m — sagging capacity
+        s   = self.sweep
+        if s['M_nl_sag_a'][-1] < M_R:
+            return np.inf
+        return float(np.interp(M_R, s['M_nl_sag_a'], s['q']))
+
+    @cached_property
+    def q_sag_b_u(self) -> float:
+        """Ultimate load [N/mm] from right span sagging failure; np.inf if not reached."""
+        M_R = self.span_right.M_R      # kN·m — sagging capacity
+        s   = self.sweep
+        if s['M_nl_sag_b'][-1] < M_R:
+            return np.inf
+        return float(np.interp(M_R, s['M_nl_sag_b'], s['q']))
+
+    @cached_property
+    def q_u(self) -> float:
+        """Governing ultimate load [N/mm] = min(q_hog_u, q_sag_a_u, q_sag_b_u)."""
+        return min(self.q_hog_u, self.q_sag_a_u, self.q_sag_b_u)
+
+    @cached_property
+    def failure_mode_u(self) -> str:
+        """Governing failure section: 'hog', 'sag_a', or 'sag_b'."""
+        candidates = {
+            'hog':   self.q_hog_u,
+            'sag_a': self.q_sag_a_u,
+            'sag_b': self.q_sag_b_u,
+        }
+        return min(candidates, key=candidates.__getitem__)
+
+    def _theta_from_profiles(self, q_step: float, M_hog_Nmm: float,
+                             zone_half_width: float = None) -> float:
+        """Integral of |κ(x)| over the hogging zone for a given (q, M_hog) state.
+
+        If *zone_half_width* is given the integration is restricted to the zone
+        [L_a − zone_half_width, L_a + zone_half_width] around the interior support.
+        Pass 0.6 * h to reproduce the EC2 §5.6.3 plastic-hinge zone (1.2h total).
+        """
+        from dataclasses import replace as _replace
+        cba_step = _replace(self, q=q_step)
+        x_a, M_a, x_b, M_b = cba_step.M_profiles(M_hog_Nmm)
+        ka = self.span_left.get_kappa_x_from_M(M_a)
+        kb = self.span_right.get_kappa_x_from_M(M_b)
+        x_all = np.concatenate([x_a, x_b + self.span_left.L])
+        k_all = np.concatenate([ka, kb])
+        k_hog = np.clip(k_all, None, 0.0)
+        if zone_half_width is not None:
+            x_sup = float(self.span_left.L)
+            mask  = np.abs(x_all - x_sup) <= zone_half_width
+            if mask.sum() < 2:
+                return 0.0
+            return float(np.trapezoid(-k_hog[mask], x_all[mask]))
+        return float(np.trapezoid(-k_hog, x_all))
+
+    def theta_u_at_step(self, kappa_idx: int = -1) -> float:
+        """Total rotation [rad] at a given sweep step: ∫|κ(x)| dx over the hogging zone.
+
+        This is the full rotation from the simulation.  At the ultimate step
+        (kappa_idx=-1) it equals the rotation demand at the plastic hinge.
+        Use ``theta_pl_at_step`` for the inelastic (post-cracking) part only.
+
+        Parameters
+        ----------
+        kappa_idx : int
+            Sweep index (0 … n-1).  -1 means the last step (ultimate state).
+        """
+        s   = self.sweep
+        n   = len(s['kappa_hog'])
+        idx = int(np.clip(kappa_idx if kappa_idx >= 0 else n - 1, 0, n - 1))
+        return self._theta_from_profiles(float(s['q'][idx]),
+                                         float(s['M_nl_hog'][idx]) * 1e6)
+
+    @cached_property
+    def theta_el(self) -> float:
+        """Elastic rotation [rad]: ∫|κ(x)| dx over the hogging zone at onset of cracking.
+
+        The hogging section cracks at κ_hog = −κ_cr_neg (the first non-linear
+        kink in the M-κ curve).  Up to this load the beam is uncracked and the
+        curvature distribution is elastic.  θ_el therefore represents the
+        recoverable (elastic) share of the total rotation.
+
+        Returns 0.0 if the section does not crack (rare with low reinforcement).
+        """
+        kappa_cr = self.span_left.mk.kappa_cr_neg   # positive magnitude [1/mm]
+        if kappa_cr is None:
+            return 0.0
+        kappa_hog_cr = -kappa_cr                     # signed, ≤ 0
+        q_cr     = self.solve_q_for_kappa_hog(kappa_hog_cr)
+        M_hog_cr = self._forward_map(kappa_hog_cr)   # N·mm, signed ≤ 0
+        return self._theta_from_profiles(q_cr, M_hog_cr)
+
+    def theta_pl_at_step(self, kappa_idx: int = -1) -> float:
+        """Inelastic (post-cracking) rotation [rad] at a given sweep step.
+
+        Defined as the difference between the total rotation at the given step
+        and the elastic rotation at the onset of cracking:
+
+            θ_pl = θ_u(step) − θ_el
+
+        Parameters
+        ----------
+        kappa_idx : int
+            Sweep index (0 … n-1).  -1 means the last step (ultimate state).
+        """
+        return self.theta_u_at_step(kappa_idx) - self.theta_el
+
+    def theta_u_ec2_at_step(self, kappa_idx: int = -1) -> float:
+        """Total rotation [rad] over the EC2 1.2h hinge zone (±0.6h around support).
+
+        Parameters
+        ----------
+        kappa_idx : int
+            Sweep index (0 … n-1).  -1 means the last step (ultimate state).
+        """
+        h   = float(self.span_left.cs.h_total)
+        s   = self.sweep
+        n   = len(s['kappa_hog'])
+        idx = int(np.clip(kappa_idx if kappa_idx >= 0 else n - 1, 0, n - 1))
+        return self._theta_from_profiles(
+            float(s['q'][idx]),
+            float(s['M_nl_hog'][idx]) * 1e6,
+            zone_half_width=0.6 * h,
+        )
+
+    @cached_property
+    def theta_el_ec2(self) -> float:
+        """Elastic rotation [rad] over the EC2 1.2h zone at the onset of cracking.
+
+        Mirrors ``theta_el`` but restricts the integration to
+        [L_a − 0.6h, L_a + 0.6h] around the interior support.
+        Returns 0.0 if the hogging section does not crack.
+        """
+        kappa_cr = self.span_left.mk.kappa_cr_neg
+        if kappa_cr is None:
+            return 0.0
+        kappa_hog_cr = -kappa_cr
+        q_cr     = self.solve_q_for_kappa_hog(kappa_hog_cr)
+        M_hog_cr = self._forward_map(kappa_hog_cr)
+        h = float(self.span_left.cs.h_total)
+        return self._theta_from_profiles(q_cr, M_hog_cr, zone_half_width=0.6 * h)
+
+    def theta_pl_ec2_at_step(self, kappa_idx: int = -1) -> float:
+        """Inelastic rotation [rad] over the EC2 1.2h zone: θ_u_ec2 − θ_el_ec2.
+
+        Parameters
+        ----------
+        kappa_idx : int
+            Sweep index (0 … n-1).  -1 means the last step (ultimate state).
+        """
+        return self.theta_u_ec2_at_step(kappa_idx) - self.theta_el_ec2
+
+    def midspan_deflection_at_step(self, kappa_idx: int = -1) -> float:
+        """Maximum sagging deflection [mm] in the left span at a given sweep step.
+
+        Parameters
+        ----------
+        kappa_idx : int
+            Sweep index (0 … n-1).  -1 means the last step (ultimate state).
+        """
+        s   = self.sweep
+        n   = len(s['kappa_hog'])
+        idx = int(np.clip(kappa_idx if kappa_idx >= 0 else n - 1, 0, n - 1))
+        from dataclasses import replace as _replace
+        cba_step = _replace(self, q=float(s['q'][idx]))
+        _, w_a, _, _ = cba_step.w_profiles(float(s['M_nl_hog'][idx]) * 1e6)
+        return float(np.max(w_a))
+
+    def lambda_sl_at_step(self, d: float, kappa_idx: int = -1) -> float:
+        """Geometric shear slenderness λ = a_s/d at the interior support (EC2 §5.6.3).
+
+        Uses the primary EC2 definition: a_s is the distance from the inflection
+        point to the maximum-moment section (interior support), divided by the
+        effective depth d.  This is more accurate than the simplified EC2 Eq. 5.12N
+        λ = M/(V·d) for beams under UDL, which underestimates the geometric value.
+
+        Parameters
+        ----------
+        d : float
+            Effective depth [mm] at the hogging section.
+        kappa_idx : int
+            Sweep index (0 … n-1).  -1 means the last step (ultimate state).
+
+        Returns
+        -------
+        float
+            Shear slenderness λ (dimensionless).
+        """
+        s   = self.sweep
+        n   = len(s['kappa_hog'])
+        idx = int(np.clip(kappa_idx if kappa_idx >= 0 else n - 1, 0, n - 1))
+        from dataclasses import replace as _replace
+        cba_step  = _replace(self, q=float(s['q'][idx]))
+        x_a, M_a, _, _ = cba_step.M_profiles(float(s['M_nl_hog'][idx]) * 1e6)
+        # Find the last sign change + → − (inflection point, sagging → hogging)
+        sign_ch = np.where(np.diff(np.sign(M_a)) < 0)[0]
+        if len(sign_ch) == 0:
+            return 0.0
+        ii = int(sign_ch[-1])
+        # Linear interpolation for precise inflection location
+        x_inf = x_a[ii] + (-M_a[ii]) / (M_a[ii + 1] - M_a[ii]) * (x_a[ii + 1] - x_a[ii])
+        a_s = float(self.span_left.L) - float(x_inf)  # [mm]
+        return a_s / float(d)
+
+    @cached_property
+    def xd_hog_u(self) -> float:
+        """x/d at the hogging (interior support) section at its M-κ peak.
+
+        Delegates to the negative-κ branch of the left-span M-κ curve.
+        Requires the left span to have been solved with solve_mode='both'.
+        """
+        return self.span_left.mk.xd_neg
+
+    @cached_property
+    def xd_sag_a_u(self) -> float:
+        """x/d at the sagging peak of the left-span section."""
+        return self.span_left.mk.xd_pos
+
+    @cached_property
+    def xd_sag_b_u(self) -> float:
+        """x/d at the sagging peak of the right-span section."""
+        return self.span_right.mk.xd_pos
+
+    def _design_chars(self) -> dict:
+        """Dimensionless design characteristics of the hogging section.
+
+        Returns ρ_l (geometric reinforcement ratio), ω (mechanical ratio),
+        and L/d (effective slenderness), all derived from the hogging section
+        geometry and the elastic equivalent span L_eff = √[(La³+Lb³)/(La+Lb)].
+
+        ReinforcementLayer.z is measured from the TOP of the section, so the
+        hogging tension steel (top bars) has the smallest z.  Effective depth
+        in hogging is d_hog = h_total - z_min (distance from bottom face to
+        top steel centroid).
+
+        Compression reinforcement (bottom bars) is intentionally ignored:
+        conservative upper-bound on x/d, appropriate for design-space sweeps.
+        """
+        cs     = self.span_left.mk.cs
+        shape  = cs.shape
+        b      = float(shape.b if hasattr(shape, 'b') else getattr(shape, 'b_w', 300.0))
+        h      = float(cs.h_total)
+        f_ck   = float(cs.concrete.f_ck)
+        f_cd   = f_ck / float(getattr(cs.concrete, 'gamma_c', 1.5))
+        layers = cs.reinforcement.layers
+        # Hogging tension steel = layer closest to the top (minimum z from top)
+        top    = min(layers, key=lambda lay: lay.z)
+        A_s    = float(top.A_s)
+        # d_hog = distance from bottom (compression face in hogging) to top steel
+        d_hog  = h - float(top.z)
+        # f_sy is the design yield strength property on ReinforcementLayer
+        f_yd   = float(getattr(top, 'f_sy', getattr(top, 'f_yd', 435.0)))
+        La     = self.span_left.L
+        Lb     = self.span_right.L
+        L_eff  = float(np.sqrt((La ** 3 + Lb ** 3) / (La + Lb)))
+        rho_l  = A_s / (b * d_hog)
+        omega  = rho_l * f_yd / f_cd
+        L_d    = L_eff / d_hog
+        return dict(rho_l=rho_l, omega=omega, L_d=L_d, L_eff=L_eff,
+                    d_hog=d_hog, b=b, f_ck=f_ck, f_cd=f_cd, f_yd=f_yd)
+
+    def _sweep_vlines(self, ax: plt.Axes) -> None:
+        """Draw yield and failure vertical lines on a κ sweep axis."""
+        s  = self.sweep
+        kappa_abs = np.abs(s['kappa_hog']) * 1e3   # ‰/mm
+        i_yield   = s['i_yield']
+        n         = len(kappa_abs)
+        if i_yield < n:
+            ax.axvline(kappa_abs[i_yield], color='#2ca02c', ls='--', lw=1.1, zorder=0)
+        ax.axvline(kappa_abs[-1], color='#d62728', ls=':', lw=1.1, zorder=0)
+
+    def plot_q_kappa(
+        self,
+        ax: Optional[plt.Axes] = None,
+        kappa_idx: Optional[int] = None,
+        *,
+        color: Optional[str] = None,
+        ls: str = '-',
+        label_suffix: str = '',
+        show_annotations: bool = True,
+    ) -> plt.Axes:
+        """Panel 1: distributed load q vs |κ_hog| along the Strategy D sweep.
+
+        Parameters
+        ----------
+        kappa_idx : int, optional
+            When given, draw a vertical marker at this sweep step.
+        color : str, optional
+            Override the main curve colour (both pre- and post-yield segments).
+        ls : str
+            Linestyle for the main curve (default ``'-'``).
+        label_suffix : str
+            Appended to every legend label (e.g. ``'  (design)'``).
+        show_annotations : bool
+            When *False*, suppress text-box annotations (design-chars, yield,
+            failure).  Set to *False* when overlaying multiple modes.
+        """
+        if ax is None:
+            _, ax = plt.subplots(figsize=(9, 3))
+
+        s             = self.sweep
+        kappa_abs     = np.abs(s['kappa_hog']) * 1e3   # ‰/mm
+        q_d           = s['q']
+        i_yield       = s['i_yield']
+        q_u           = q_d[-1]
+        n             = len(kappa_abs)
+        C_FAIL        = '#d62728'
+        C_YLD         = '#2ca02c'
+        c_pre         = color if color is not None else 'steelblue'
+        c_post        = color if color is not None else '#9467bd'
+
+        # pre-yield segment (always present)
+        ax.plot(
+            kappa_abs[:i_yield + 1], q_d[:i_yield + 1],
+            ls, color=c_pre, lw=2.0, label=f'$q$  pre-yield{label_suffix}',
+        )
+        # post-yield segment (if any)
+        if i_yield < n - 1:
+            ax.plot(
+                kappa_abs[i_yield:], q_d[i_yield:],
+                ls, color=c_post, lw=2.0, label=f'$q$  post-yield{label_suffix}',
+            )
+
+        ax.axhline(q_u, color=C_FAIL, ls=':', lw=1.0,
+                   label=f'$q_u$ = {q_u:.2f} N/mm{label_suffix}')
+        self._sweep_vlines(ax)
+
+        if show_annotations:
+            # yield annotation
+            if i_yield < n and s['eps_yd'] is not None:
+                eps_yd = s['eps_yd']
+                ax.annotate(
+                    f'top-bar yield\n$\\varepsilon_{{yd}}={eps_yd * 1e3:.2f}$‰',
+                    xy=(kappa_abs[i_yield], q_d[i_yield]),
+                    xytext=(kappa_abs[i_yield], 0.70 * q_u),
+                    arrowprops=dict(arrowstyle='->', color=C_YLD, lw=1.2),
+                    color=C_YLD, fontsize=8.5, ha='left', va='top',
+                )
+            # failure annotation
+            mk      = self.span_left.mk
+            idx_pk  = int(np.argmin(mk.M_neg_values)) if (
+                mk.M_neg_values is not None and len(mk.M_neg_values) > 0
+            ) else -1
+            mode_label = ''
+            try:
+                from scite.cs_design.cs_stress_strain_profile import StressStrainProfile
+                k_last  = float(s['kappa_hog'][-1])
+                eb_last = float(mk.eps_bot_neg_values[idx_pk]) if idx_pk >= 0 else 0.0
+                p       = StressStrainProfile(mk.cs, kappa=k_last, eps_bottom=eb_last)
+                mode_label = p.failure_mode
+            except Exception:
+                pass
+
+            ax.annotate(
+                f'$q_u$={q_u:.2f}' + (f'\n{mode_label}' if mode_label else ''),
+                xy=(kappa_abs[-1], q_u),
+                xytext=(kappa_abs[-1], 0.70 * q_u),
+                arrowprops=dict(arrowstyle='->', color=C_FAIL, lw=1.2),
+                color=C_FAIL, fontsize=8.5, ha='right', va='top',
+            )
+
+            # design characteristics annotation
+            dc = self._design_chars()
+            ax.text(
+                0.02, 0.98,
+                f'$\\rho_l$ = {dc["rho_l"]:.4f}'
+                f'    $\\omega$ = {dc["omega"]:.3f}'
+                f'    $L/d$ = {dc["L_d"]:.1f}',
+                transform=ax.transAxes, ha='left', va='top', fontsize=9,
+                bbox=dict(boxstyle='round,pad=0.35', facecolor='#f8f8f8',
+                          edgecolor='#aaaaaa', alpha=0.92),
+            )
+
+        # current-step marker
+        if kappa_idx is not None:
+            idx = int(np.clip(kappa_idx, 0, n - 1))
+            ax.axvline(kappa_abs[idx], color='gray', lw=1.2, ls='-', alpha=0.7, zorder=3)
+            ax.scatter([kappa_abs[idx]], [q_d[idx]],
+                       color=c_pre, s=50, zorder=5)
+
+        ax.set_ylabel('$q$  [N/mm]', fontsize=11)
+        ax.legend(fontsize=11, loc='lower right')
+        ax.grid(True, alpha=0.3, ls='--')
+        return ax
+
+    def plot_M_kappa(
+        self,
+        ax: Optional[plt.Axes] = None,
+        kappa_idx: Optional[int] = None,
+        *,
+        color: Optional[str] = None,
+        ls: str = '-',
+        label_suffix: str = '',
+        show_annotations: bool = True,
+    ) -> plt.Axes:
+        """Panel 2: |M_hog| and M_sag moments vs |κ_hog| along the sweep.
+
+        Legend is split:
+          - lower-left : line labels for the dynamic curves (M_hog, M_sag)
+          - lower-right: text box with reference values (M_R, M_hog_el, δ_M)
+
+        Parameters
+        ----------
+        kappa_idx : int, optional
+            When given, add scatter markers and annotate the current step's values.
+        color : str, optional
+            Override the main curve colour (both hogging and sagging lines).
+        ls : str
+            Linestyle for the hogging curve; sagging uses ``'--'`` relative to
+            the hogging style (ignored when ``color`` is *None*).
+        label_suffix : str
+            Appended to every legend label (e.g. ``'  (design)'``).
+        show_annotations : bool
+            When *False*, suppress the reference-values text box.
+        """
+        if ax is None:
+            _, ax = plt.subplots(figsize=(9, 4))
+
+        s          = self.sweep
+        kappa_abs  = np.abs(s['kappa_hog']) * 1e3   # ‰/mm
+        M_hog_abs  = np.abs(s['M_nl_hog'])
+        M_sag_a    = s['M_nl_sag_a']
+        M_sag_b    = s['M_nl_sag_b']
+        n          = len(kappa_abs)
+        La         = self.span_left.L
+        Lb         = self.span_right.L
+        bda        = self.span_left
+        C_HOG      = color if color is not None else 'steelblue'
+        C_SAG      = color if color is not None else '#4488cc'
+        C_EL       = '#cc2222'     # elastic reference — red (never overridden)
+
+        M_hog_el_at_qu = abs(s['M_el_hog'][-1])
+        M_R_hog        = M_hog_abs[-1]
+        delta_M        = M_R_hog / M_hog_el_at_qu
+
+        sym = abs(La - Lb) < 1.0   # spans equal to within 1 mm
+
+        # ── Curve lines — these go into the left legend ───────────────────────
+        h_hog, = ax.plot(kappa_abs, M_hog_abs, ls, color=C_HOG, lw=2.0,
+                         label=f'$|M_{{hog}}|${label_suffix}')
+        if sym:
+            h_sag_a, = ax.plot(kappa_abs, M_sag_a, '--', color=C_SAG, lw=2.0,
+                                label=f'$M_{{sag,max}}${label_suffix}')
+            curve_handles = [h_hog, h_sag_a]
+            curve_labels  = [h_hog.get_label(), h_sag_a.get_label()]
+        else:
+            h_sag_a, = ax.plot(kappa_abs, M_sag_a, '--', color=C_SAG, lw=2.0,
+                                label=f'$M_{{sag,a}}$ (left){label_suffix}')
+            h_sag_b, = ax.plot(kappa_abs, M_sag_b, ':',  color=C_SAG, lw=2.0,
+                                label=f'$M_{{sag,b}}$ (right){label_suffix}')
+            curve_handles = [h_hog, h_sag_a, h_sag_b]
+            curve_labels  = [h_hog.get_label(), h_sag_a.get_label(), h_sag_b.get_label()]
+
+        # ── Reference axhlines — no legend labels ─────────────────────────────
+        ax.axhline(bda.M_R,        color=C_HOG, ls=':', lw=1.2)
+        ax.axhline(M_R_hog,        color=C_HOG, ls=':', lw=1.2)
+        ax.axhline(M_hog_el_at_qu, color=C_EL,  ls='--', lw=1.2)
+
+        self._sweep_vlines(ax)
+        ax.set_ylim(bottom=0, top=M_hog_el_at_qu * 1.12)
+
+        # ── Current-step markers ──────────────────────────────────────────────
+        if kappa_idx is not None:
+            idx = int(np.clip(kappa_idx, 0, n - 1))
+            ax.axvline(kappa_abs[idx], color='gray', lw=1.2, ls='-', alpha=0.7, zorder=3)
+            ax.scatter([kappa_abs[idx]], [M_hog_abs[idx]], color=C_HOG, s=50, zorder=5)
+            ax.scatter([kappa_abs[idx]], [M_sag_a[idx]],  color=C_SAG, s=50, zorder=5)
+            if not sym:
+                ax.scatter([kappa_abs[idx]], [M_sag_b[idx]],
+                           color=C_SAG, s=50, marker='s', zorder=5)
+
+        # ── Left legend: curve line styles ────────────────────────────────────
+        leg_left = ax.legend(
+            curve_handles, curve_labels,
+            fontsize=10, loc='lower left',
+            framealpha=0.85,
+        )
+        ax.add_artist(leg_left)   # keep it when we add the second legend
+
+        if show_annotations:
+            # ── Right text box: reference values ──────────────────────────────
+            ref_lines = [
+                f'$M_R$ (sag) = {bda.M_R:.1f} kN·m',
+                f'$M_R$ (hog) = {M_R_hog:.1f} kN·m',
+                f'$|M_{{hog,el}}|(q_u)$ = {M_hog_el_at_qu:.1f} kN·m',
+                f'$\\delta_M = {delta_M:.3f}$',
+            ]
+            ax.text(
+                0.99, 0.02, '\n'.join(ref_lines),
+                transform=ax.transAxes,
+                ha='right', va='bottom', fontsize=9.5,
+                bbox=dict(boxstyle='round,pad=0.4', facecolor='white',
+                          edgecolor='#aaaaaa', alpha=0.9),
+            )
+
+        ax.set_xlabel(r'$|\kappa_{hog}|$  [‰/mm]', fontsize=11)
+        ax.set_ylabel('Moment  [kN·m]', fontsize=11)
+        ax.grid(True, alpha=0.3, ls='--')
+        return ax
+
+    def plot_moment_profile_at_step(
+        self,
+        ax: Optional[plt.Axes] = None,
+        kappa_idx: int = -1,
+        *,
+        color: Optional[str] = None,
+        ls: str = '-',
+        label_suffix: str = '',
+        show_annotations: bool = True,
+    ) -> plt.Axes:
+        """Two-bay bending moment diagram at a given sweep step.
+
+        Shows both the nonlinear (blue, filled) and elastic (red) moment
+        profiles.  Sagging-peak values appear in corner text boxes; hogging
+        values are annotated directly at the interior support.
+
+        Parameters
+        ----------
+        kappa_idx : int
+            Sweep index (0 … n-1).  -1 means the last step (ultimate state).
+        color : str, optional
+            Override the nonlinear profile colour (elastic reference stays red).
+        ls : str
+            Linestyle for the nonlinear profile (default ``'-'``).
+        label_suffix : str
+            Unused in this plot (kept for API symmetry with the other methods).
+        show_annotations : bool
+            When *False*, suppress all text-box annotations (moment values).
+            Useful when overlaying multiple modes on the same axes.
+        """
+        if ax is None:
+            _, ax = plt.subplots(figsize=(9, 3.5))
+
+        s   = self.sweep
+        n   = len(s['kappa_hog'])
+        idx = int(np.clip(kappa_idx if kappa_idx >= 0 else n - 1, 0, n - 1))
+        La  = self.span_left.L
+        Lb  = self.span_right.L
+
+        q_step        = float(s['q'][idx])
+        M_hog_Nmm     = float(s['M_nl_hog'][idx]) * 1e6      # NL hogging, N·mm, signed ≤ 0
+        M_hog_el_Nmm  = float(s['M_el_hog'][idx]) * 1e6      # elastic hogging at same q
+
+        from dataclasses import replace as _replace
+        cba_step = _replace(self, q=q_step)
+
+        # Nonlinear and elastic moment profiles
+        x_a,  M_a,  x_b,  M_b  = cba_step.M_profiles(M_hog_Nmm)
+        x_a_,  M_a_el, x_b_,  M_b_el = cba_step.M_profiles(M_hog_el_Nmm)
+
+        x_b_g = x_b + La   # global x for right span
+        C_NL  = color if color is not None else 'steelblue'
+        C_EL  = '#cc2222'   # elastic reference — never overridden
+
+        # ── Nonlinear: coloured solid fill ────────────────────────────────────
+        ax.plot(x_a,   M_a  / 1e6, ls, color=C_NL, lw=2.0)
+        ax.plot(x_b_g, M_b  / 1e6, ls, color=C_NL, lw=2.0)
+        ax.fill_between(x_a,   0, M_a  / 1e6, color=C_NL, alpha=0.13)
+        ax.fill_between(x_b_g, 0, M_b  / 1e6, color=C_NL, alpha=0.13)
+
+        # ── Elastic: red solid, no fill ───────────────────────────────────────
+        ax.plot(x_a,   M_a_el / 1e6, '-', color=C_EL, lw=1.6, alpha=0.85)
+        ax.plot(x_b_g, M_b_el / 1e6, '-', color=C_EL, lw=1.6, alpha=0.85)
+
+        ax.axhline(0, color='black', lw=0.8)
+        for xs in (0, La, La + Lb):
+            ax.axvline(xs, color='gray', lw=0.5, ls=':')
+
+        # ── Sagging-peak markers ──────────────────────────────────────────────
+        idx_sag_a    = int(np.argmax(M_a))
+        idx_sag_b    = int(np.argmax(M_b))
+        idx_sag_a_el = int(np.argmax(M_a_el))
+        idx_sag_b_el = int(np.argmax(M_b_el))
+
+        ax.scatter([x_a[idx_sag_a]],      [M_a[idx_sag_a]       / 1e6],
+                   color=C_NL, s=55, zorder=6)
+        ax.scatter([x_b_g[idx_sag_b]],    [M_b[idx_sag_b]       / 1e6],
+                   color=C_NL, s=55, zorder=6)
+        ax.scatter([x_a[idx_sag_a_el]],   [M_a_el[idx_sag_a_el] / 1e6],
+                   color=C_EL, s=45, zorder=6, marker='D')
+        ax.scatter([x_b_g[idx_sag_b_el]], [M_b_el[idx_sag_b_el] / 1e6],
+                   color=C_EL, s=45, zorder=6, marker='D')
+
+        # ── Interior-support (hogging) markers ───────────────────────────────
+        ax.scatter([La], [M_hog_Nmm    / 1e6], color=C_NL, s=65, zorder=7)
+        ax.scatter([La], [M_hog_el_Nmm / 1e6], color=C_EL, s=50, zorder=7, marker='D')
+
+        # ── Fixed y-limits from the ultimate state ────────────────────────────
+        # Both NL and elastic values at the last sweep step define the fixed range
+        y_min_ult = min(float(s['M_nl_hog'][-1]), float(s['M_el_hog'][-1])) * 1.12
+        y_max_ult = max(float(s['M_nl_sag_a'][-1]), float(s['M_nl_sag_b'][-1]),
+                        float(s['M_el_sag_a'][-1]),  float(s['M_el_sag_b'][-1])) * 1.12
+        ax.set_ylim(y_min_ult, y_max_ult)
+
+        ax.invert_yaxis()   # sagging below axis (structural convention)
+
+        if show_annotations:
+            # ── Hogging box — NL and EL stacked at interior support ───────────
+            import matplotlib.transforms as _mtfm
+            _blended = _mtfm.blended_transform_factory(ax.transData, ax.transAxes)
+            ax.text(
+                La, 0.03,
+                f'$M_{{hog,nl}}$ = {M_hog_Nmm / 1e6:.1f} kN·m',
+                transform=_blended, ha='center', va='bottom', fontsize=8.5, color=C_NL,
+                bbox=dict(boxstyle='round,pad=0.3', facecolor='white',
+                          edgecolor=C_NL, alpha=0.90),
+            )
+            ax.text(
+                La, 0.17,
+                f'$M_{{hog,el}}$  = {M_hog_el_Nmm / 1e6:.1f} kN·m',
+                transform=_blended, ha='center', va='bottom', fontsize=8.5, color=C_EL,
+                bbox=dict(boxstyle='round,pad=0.3', facecolor='white',
+                          edgecolor=C_EL, alpha=0.90),
+            )
+
+            # ── Corner sagging boxes ──────────────────────────────────────────
+            sym = abs(La - Lb) < 1.0
+            ax.text(
+                0.01, 0.97,
+                f'Left span\n$M_{{sag,nl}}$ = {M_a[idx_sag_a] / 1e6:.1f} kN·m',
+                transform=ax.transAxes, ha='left', va='top', fontsize=8.5, color=C_NL,
+                bbox=dict(boxstyle='round,pad=0.3', facecolor='white',
+                          edgecolor=C_NL, alpha=0.88),
+            )
+            ax.text(
+                0.01, 0.80,
+                f'$M_{{sag,el}}$  = {M_a_el[idx_sag_a_el] / 1e6:.1f} kN·m',
+                transform=ax.transAxes, ha='left', va='top', fontsize=8.5, color=C_EL,
+                bbox=dict(boxstyle='round,pad=0.3', facecolor='white',
+                          edgecolor=C_EL, alpha=0.88),
+            )
+            ax.text(
+                0.99, 0.97,
+                ('Right span' if not sym else 'Right = Left') + '\n'
+                f'$M_{{sag,nl}}$ = {M_b[idx_sag_b] / 1e6:.1f} kN·m',
+                transform=ax.transAxes, ha='right', va='top', fontsize=8.5, color=C_NL,
+                bbox=dict(boxstyle='round,pad=0.3', facecolor='white',
+                          edgecolor=C_NL, alpha=0.88),
+            )
+            ax.text(
+                0.99, 0.80,
+                f'$M_{{sag,el}}$  = {M_b_el[idx_sag_b_el] / 1e6:.1f} kN·m',
+                transform=ax.transAxes, ha='right', va='top', fontsize=8.5, color=C_EL,
+                bbox=dict(boxstyle='round,pad=0.3', facecolor='white',
+                          edgecolor=C_EL, alpha=0.88),
+            )
+
+        ax.set_xlabel('$x$  [mm]', fontsize=11)
+        ax.set_ylabel(r'$M$  [kN·m]', fontsize=11)
+        ax.grid(True, alpha=0.3, ls='--')
+        return ax
+
+    def plot_kappa_profile_at_step(
+        self,
+        ax: Optional[plt.Axes] = None,
+        kappa_idx: int = -1,
+        *,
+        color: Optional[str] = None,
+        ls: str = '-',
+        label_suffix: str = '',
+        show_annotations: bool = True,
+    ) -> plt.Axes:
+        """Curvature profile κ(x) at a given sweep step.
+
+        Mirrors ``plot_moment_profile_at_step`` but shows the nonlinear
+        curvature distribution derived by inverting the M-κ relation.
+
+        Parameters
+        ----------
+        kappa_idx : int
+            Sweep index (0 … n-1).  -1 means the last step (ultimate state).
+        color : str, optional
+            Override the profile colour (default ``'steelblue'``).
+        ls : str
+            Linestyle (default ``'-'``).
+        label_suffix : str
+            Appended to the legend label (e.g. ``'  (design)'``).
+        show_annotations : bool
+            When *False*, suppress the κ_hog text box at the interior support.
+        """
+        if ax is None:
+            _, ax = plt.subplots(figsize=(9, 3.5))
+
+        s   = self.sweep
+        n   = len(s['kappa_hog'])
+        idx = int(np.clip(kappa_idx if kappa_idx >= 0 else n - 1, 0, n - 1))
+        La  = self.span_left.L
+        Lb  = self.span_right.L
+
+        q_step       = float(s['q'][idx])
+        M_hog_Nmm    = float(s['M_nl_hog'][idx]) * 1e6     # N·mm, signed ≤ 0
+        kappa_hog_pm = float(s['kappa_hog'][idx]) * 1e3    # ‰/mm, negative
+
+        from dataclasses import replace as _replace
+        cba_step = _replace(self, q=q_step)
+
+        x_a, M_a, x_b, M_b = cba_step.M_profiles(M_hog_Nmm)
+        ka = self.span_left.get_kappa_x_from_M(M_a)    # 1/mm, signed
+        kb = self.span_right.get_kappa_x_from_M(M_b)   # 1/mm, signed
+
+        # θ_pl: integral of |κ| over the hogging (κ < 0) zone [rad]
+        x_all = np.concatenate([x_a, x_b + La])
+        k_all = np.concatenate([ka, kb])
+        theta_u = float(np.trapezoid(-np.clip(k_all, None, 0.0), x_all))   # rad
+
+        C = color if color is not None else 'steelblue'
+
+        ax.plot(x_a,       ka * 1e3, ls, color=C, lw=2.0,
+                label=fr'$\kappa(x)${label_suffix}')
+        ax.plot(x_b + La,  kb * 1e3, ls, color=C, lw=2.0)
+
+        ax.axhline(0, color='black', lw=0.8)
+        for xs in (0, La, La + Lb):
+            ax.axvline(xs, color='gray', lw=0.5, ls=':')
+
+        # fixed y-limits from the ultimate state (consistent across overlay calls)
+        k_hog_ult = float(s['kappa_hog'][-1]) * 1e3
+        k_sag_ult = max(float(s['kappa_sag_a'][-1]),
+                        float(s['kappa_sag_b'][-1])) * 1e3
+        ax.set_ylim(k_hog_ult * 1.12, k_sag_ult * 1.12)
+        ax.invert_yaxis()
+
+        if show_annotations:
+            import matplotlib.transforms as _mtfm
+            _blended = _mtfm.blended_transform_factory(ax.transData, ax.transAxes)
+            ax.text(
+                La, 0.03,
+                fr'$\kappa_{{hog}}$ = {kappa_hog_pm:.4f} ‰/mm',
+                transform=_blended, ha='center', va='bottom', fontsize=8.5, color=C,
+                bbox=dict(boxstyle='round,pad=0.3', facecolor='white',
+                          edgecolor=C, alpha=0.90),
+            )
+            ax.text(
+                0.99, 0.03,
+                fr'$\theta_{{u}}$ = {theta_u * 1e3:.2f} mrad',
+                transform=ax.transAxes, ha='right', va='bottom', fontsize=8.5, color=C,
+                bbox=dict(boxstyle='round,pad=0.3', facecolor='white',
+                          edgecolor=C, alpha=0.90),
+            )
+
+        ax.set_xlabel('$x$  [mm]', fontsize=11)
+        ax.set_ylabel(r'$\kappa$  [‰/mm]', fontsize=11)
+        ax.grid(True, alpha=0.3, ls='--')
+        return ax
+
+    # ── Plotting ──────────────────────────────────────────────────────────────
+    #
+    # Structural sign convention:
+    #   - M > 0 (sagging) plotted BELOW the beam axis (invert_yaxis).
+    #   - M < 0 (hogging) plotted ABOVE the beam axis.
+    #   - Global x-axis: left span [0, L_a], right span [L_a, L_a + L_b].
+    #   - Interior support is at x = L_a.
+
+    def plot_scheme(
+        self,
+        ax: Optional[plt.Axes] = None,
+        load_label: Optional[str] = None,
+    ) -> plt.Axes:
+        """Structural schematic: beam axis, support triangles, UDL arrows."""
+        if ax is None:
+            _, ax = plt.subplots(figsize=(10, 2))
+
+        La      = self.span_left.L
+        Lb      = self.span_right.L
+        L_total = La + Lb
+        tri_h   = 0.06 * L_total
+        q_level = 0.30 * L_total
+
+        ax.plot([0, L_total], [0, 0], color='black', lw=2.0, solid_capstyle='round')
+
+        for xi in np.linspace(0, L_total, 15):
+            ax.annotate(
+                '', xy=(xi, 0), xytext=(xi, q_level),
+                arrowprops=dict(arrowstyle='->', color='steelblue', lw=1.1),
+            )
+        ax.fill_between(
+            [0, L_total], [q_level] * 2, [q_level * 1.05] * 2,
+            color='steelblue', alpha=0.25,
+        )
+        ax.text(
+            L_total / 2, q_level * 1.12,
+            load_label if load_label is not None else f'$q$ = {self.q:.3g} N/mm',
+            ha='center', va='bottom', fontsize=9, color='steelblue',
+        )
+
+        for xs in (0, La, L_total):
+            ax.fill(
+                [xs - tri_h * 0.55, xs + tri_h * 0.55, xs],
+                [-tri_h, -tri_h, 0],
+                color='#555555', zorder=3,
+            )
+            ax.text(xs, -tri_h * 1.55, f'{xs / 1000:.2f} m',
+                    ha='center', va='top', fontsize=8, color='#555555')
+
+        arr_y = -tri_h * 3.0
+        for x0, x1, label in (
+            (0,  La,      f'$L_a$ = {La / 1000:.2f} m'),
+            (La, L_total, f'$L_b$ = {Lb / 1000:.2f} m'),
+        ):
+            ax.annotate(
+                '', xy=(x1, arr_y), xytext=(x0, arr_y),
+                arrowprops=dict(arrowstyle='<->', color='black', lw=0.9),
+            )
+            ax.text((x0 + x1) / 2, arr_y - tri_h * 0.8, label,
+                    ha='center', va='top', fontsize=9)
+
+        ax.set_xlim(-0.05 * L_total, 1.05 * L_total)
+        ax.set_ylim(-tri_h * 5.0, q_level * 1.3)
+        ax.set_axis_off()
+        return ax
+
+    def plot_M(
+        self,
+        ax: Optional[plt.Axes] = None,
+        show_elastic: bool = True,
+        color_el: str = '#888888',
+        color_nl: str = '#1f77b4',
+        M_hog_nl: Optional[float] = None,
+    ) -> plt.Axes:
+        """Bending moment diagram: elastic estimate and nonlinear solution.
+
+        Parameters
+        ----------
+        M_hog_nl : float, optional
+            Pre-computed nonlinear hogging moment [N·mm] ≤ 0 (signed).
+            When provided the internal ``solve()`` call is skipped.
+
+        Convention: y-axis inverted so sagging (M > 0) appears below the
+        beam axis and hogging (M < 0) appears above — structural standard.
+        Interior support is at x = L_a.
+        """
+        if ax is None:
+            _, ax = plt.subplots(figsize=(10, 4))
+
+        La        = self.span_left.L
+        M_hog_el  = self.M_el_hog         # negative
+        if M_hog_nl is None:
+            M_hog_nl  = self.solve_M_nl_hog()   # negative
+
+        cases: list = []
+        if show_elastic:
+            cases.append((M_hog_el, color_el, '--',
+                          f'elastic  $M_{{hog}}$ = {M_hog_el / 1e6:.2f} kN·m'))
+        cases.append((M_hog_nl, color_nl, '-',
+                      f'nonlinear  $M_{{hog}}$ = {M_hog_nl / 1e6:.2f} kN·m'))
+
+        for M_hog, color, ls, label in cases:
+            x_a, M_a, x_b, M_b = self.M_profiles(M_hog)
+            ax.plot(x_a,       M_a / 1e6, color=color, lw=1.8, ls=ls, label=label)
+            ax.plot(x_b + La,  M_b / 1e6, color=color, lw=1.8, ls=ls)
+            # Interior support marker at x = L_a (right end of left span)
+            ax.plot(La, M_hog / 1e6, marker='o', ms=6, color=color, zorder=5)
+
+        for xs in (0, La, La + self.span_right.L):
+            ax.axvline(xs, color='gray', lw=0.5, ls=':')
+        ax.axhline(0, color='black', lw=0.8)
+
+        ax.invert_yaxis()   # sagging (M>0) below axis, hogging (M<0) above axis
+        ax.set_xlabel('$x$ [mm]', fontsize=11)
+        ax.set_ylabel(r'$M$ [kN·m]  ($+$ sagging $\downarrow$, $-$ hogging $\uparrow$)', fontsize=11)
+        ax.set_title('Bending moment diagram', fontsize=10)
+        ax.legend(fontsize=9)
+        ax.grid(True, alpha=0.3, ls='--')
+        return ax
+
+    def plot_w(
+        self,
+        ax: Optional[plt.Axes] = None,
+        show_elastic: bool = True,
+        color_el: str = '#888888',
+        color_nl: str = '#1f77b4',
+        M_hog_nl: Optional[float] = None,
+    ) -> plt.Axes:
+        """Deflection profiles: elastic estimate and nonlinear solution.
+
+        Parameters
+        ----------
+        M_hog_nl : float, optional
+            Pre-computed nonlinear hogging moment [N·mm] ≤ 0 (signed).
+
+        y-axis is inverted (downward positive, structural convention).
+        """
+        if ax is None:
+            _, ax = plt.subplots(figsize=(10, 4))
+
+        La       = self.span_left.L
+        Lb       = self.span_right.L
+        M_hog_el = self.M_el_hog
+        if M_hog_nl is None:
+            M_hog_nl = self.solve_M_nl_hog()
+
+        if show_elastic:
+            x_a, w_a, x_b, w_b = self.elastic_w_profiles(M_hog_el)
+            ax.plot(x_a,       w_a, color=color_el, lw=1.8, ls='--',
+                    label=r'elastic ($E_{cm}\cdot I_g$, uncracked)')
+            ax.plot(x_b + La,  w_b, color=color_el, lw=1.8, ls='--')
+
+        x_a, w_a, x_b, w_b = self.w_profiles(M_hog_nl)
+        ax.plot(x_a,       w_a, color=color_nl, lw=1.8, ls='-', label='nonlinear')
+        ax.plot(x_b + La,  w_b, color=color_nl, lw=1.8, ls='-')
+
+        for xs in (0, La, La + Lb):
+            ax.axvline(xs, color='gray', lw=0.5, ls=':')
+        ax.axhline(0, color='black', lw=0.8)
+
+        ax.invert_yaxis()
+        ax.set_xlabel('$x$ [mm]', fontsize=11)
+        ax.set_ylabel(r'$w$ [mm]  $\downarrow$', fontsize=11)
+        ax.set_title('Deflection profiles', fontsize=10)
+        ax.legend(fontsize=9)
+        ax.grid(True, alpha=0.3, ls='--')
+        return ax
+
+    def plot_redistribution(
+        self,
+        q_arr: Optional[np.ndarray] = None,
+        ax: Optional[plt.Axes] = None,
+        color: str = '#d62728',
+    ) -> plt.Axes:
+        """Moment redistribution curve: M_hog / M_hog,el vs q.
+
+        Both M_hog and M_hog,el are ≤ 0 (signed); their ratio is positive
+        (≤ 1 means redistribution has occurred).
+        """
+        if ax is None:
+            _, ax = plt.subplots(figsize=(7, 5))
+        La, Lb = self.span_left.L, self.span_right.L
+        if q_arr is None:
+            q_arr = np.linspace(1e-3 * self.q, 2.0 * self.q, 40)
+
+        from dataclasses import replace as _replace
+        M_hog_arr = np.array([_replace(self, q=float(q_i)).solve_M_nl_hog() for q_i in q_arr])
+        M_el_arr  = -q_arr * (La ** 3 + Lb ** 3) / (8.0 * (La + Lb))   # negative
+
+        ax.plot(q_arr, M_hog_arr / M_el_arr, color=color, lw=2.0,
+                label=r'$M_\mathrm{hog} / M_\mathrm{hog,el}$')
+        ax.axhline(1.0, color='gray', lw=1.0, ls='--', label='elastic reference')
+        ax.set_xlabel('$q$ [N/mm]', fontsize=11)
+        ax.set_ylabel(r'$M_\mathrm{hog} / M_\mathrm{hog,el}$', fontsize=11)
+        ax.set_title('Moment redistribution', fontsize=10)
+        ax.legend(fontsize=9)
+        ax.grid(True, alpha=0.3, ls='--')
+        return ax
+
+    def plot_summary(self, title: str = '', M_hog_nl: Optional[float] = None) -> None:
+        """3-panel summary: beam scheme | M diagram | deflection profile."""
+        if M_hog_nl is None:
+            M_hog_nl = self.solve_M_nl_hog()
+        fig, axes = plt.subplots(
+            3, 1,
+            figsize=(12, 10),
+            gridspec_kw={'height_ratios': [1, 2, 2]},
+        )
+        self.plot_scheme(axes[0])
+        self.plot_M(axes[1], M_hog_nl=M_hog_nl)
+        self.plot_w(axes[2], M_hog_nl=M_hog_nl)
+
+        La, Lb = self.span_left.L, self.span_right.L
+        fig.suptitle(
+            title or (
+                f'Two-span continuous beam — '
+                f'$L_a$ = {La / 1000:.2f} m,  '
+                f'$L_b$ = {Lb / 1000:.2f} m,  '
+                f'$q$ = {self.q:.3g} N/mm'
+            ),
+            fontsize=12, fontweight='bold',
+        )
+        fig.tight_layout()
+        try:
+            from IPython.display import display as ipy_display
+            ipy_display(fig)
+            plt.close(fig)
+        except ImportError:
+            return fig
